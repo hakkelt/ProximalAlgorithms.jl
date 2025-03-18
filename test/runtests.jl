@@ -36,3 +36,5 @@ include("problems/test_linear_programs.jl")
 include("problems/test_sparse_logistic_small.jl")
 include("problems/test_nonconvex_qp.jl")
 include("problems/test_verbose.jl")
+
+include("assumptions.jl")

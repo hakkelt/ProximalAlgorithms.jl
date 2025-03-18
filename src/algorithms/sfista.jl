@@ -113,9 +113,9 @@ Constructs the the FISTA-like algorithm in [3].
 
 This algorithm solves strongly convex composite optimization problems of the form
 
-    minimize f(x) + h(x),
+    minimize f(x) + g(x),
 
-where h is proper closed convex and f is a continuously differentiable function that is μ-strongly convex and whose gradient is
+where g is proper closed convex and f is a continuously differentiable function that is `mf`-strongly convex and whose gradient is
 Lf-Lipschitz continuous.
 
 The scheme is based on Nesterov's accelerated gradient method [1, Eq. (4.9)] and Beck's method for the convex case [2]. Its full
@@ -164,4 +164,9 @@ SFISTA(;
     freq,
     display,
     kwargs...,
+)
+
+get_assumptions(::Type{<:SFISTAIteration}) = (
+    SimpleTerm(:f => (is_smooth, is_convex)),
+    SimpleTerm(:g => (is_proximable, is_convex)),
 )

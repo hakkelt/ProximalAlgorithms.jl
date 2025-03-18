@@ -203,6 +203,11 @@ FastForwardBackward(;
     kwargs...,
 )
 
+get_assumptions(::Type{<:FastForwardBackwardIteration}) = (
+    SimpleTerm(:f => (is_smooth, is_convex)),
+    SimpleTerm(:g => (is_proximable, is_convex,))
+)
+
 # Aliases
 
 const FastProximalGradientIteration = FastForwardBackwardIteration

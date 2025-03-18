@@ -112,6 +112,12 @@ end
 
 Base.IteratorSize(::Type{<:AFBAIteration}) = Base.IsInfinite()
 
+get_assumptions(::Type{<:AFBAIteration}) = (
+    SimpleTerm(:f => (is_smooth, is_convex)),
+    SimpleTerm(:g => (is_proximable, is_convex)),
+    OperatorTermWithInfimalConvolution(:h => (is_proximable, is_convex), :l => (is_proximable, is_strongly_convex), :L => (is_linear,))
+)
+
 """
     VuCondatIteration(; <keyword-arguments>)
 
@@ -135,6 +141,12 @@ See also: [`AFBAIteration`](@ref), [`VuCondat`](@ref).
 """
 VuCondatIteration(; kwargs...) = AFBAIteration(kwargs..., theta = 2)
 
+get_assumptions(::typeof(VuCondatIteration)) = (
+    SimpleTerm(:f => (is_smooth, is_convex)),
+    SimpleTerm(:g => (is_proximable, is_convex)),
+    OperatorTermWithInfimalConvolution(:h => (is_proximable, is_convex), :l => (is_proximable, is_strongly_convex), :L => (is_linear,))
+)
+
 """
     ChambollePockIteration(; <keyword-arguments>)
 
@@ -156,6 +168,11 @@ for all other arguments see [`AFBAIteration`](@ref).
 """
 ChambollePockIteration(; kwargs...) =
     AFBAIteration(kwargs..., theta = 2, f = Zero(), l = IndZero())
+
+get_assumptions(::T) where {T<:typeof(ChambollePockIteration)} = (
+    SimpleTerm(:g => (is_proximable, is_convex)),
+    OperatorTerm(:h => (is_proximable, is_convex), :L => (is_linear,))
+)
 
 Base.@kwdef struct AFBAState{Tx,Ty}
     x::Tx

@@ -298,3 +298,8 @@ PANOCplus(;
     display,
     kwargs...,
 )
+
+get_assumptions(::Type{<:PANOCplusIteration}) = (
+    OperatorTerm(:f => (is_smooth,), :A => (is_linear,)),
+    SimpleTerm(:g => (is_proximable,))
+)

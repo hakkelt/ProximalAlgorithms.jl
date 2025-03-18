@@ -130,3 +130,9 @@ DavisYin(;
     display,
     kwargs...,
 )
+
+get_assumptions(::Type{<:DavisYinIteration}) = (
+    SimpleTerm(:f => (is_smooth, is_convex)),
+    SimpleTerm(:g => (is_proximable, is_convex,)),
+    SimpleTerm(:h => (is_proximable, is_convex,))
+)

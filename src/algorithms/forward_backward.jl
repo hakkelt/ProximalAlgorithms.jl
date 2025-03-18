@@ -178,6 +178,11 @@ ForwardBackward(;
     kwargs...,
 )
 
+get_assumptions(::Type{<:ForwardBackwardIteration}) = (
+    SimpleTerm(:f => (is_locally_smooth,)),
+    SimpleTerm(:g => (is_proximable,))
+)
+
 # Aliases
 
 const ProximalGradientIteration = ForwardBackwardIteration

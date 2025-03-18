@@ -200,3 +200,8 @@ LiLin(;
     display,
     kwargs...,
 )
+
+get_assumptions(::Type{<:LiLinIteration}) = (
+    SimpleTerm(:f => (is_smooth,)),
+    SimpleTerm(:g => (is_proximable,))
+)

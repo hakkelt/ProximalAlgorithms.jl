@@ -253,3 +253,8 @@ DRLS(;
     display,
     kwargs...,
 )
+
+get_assumptions(::Type{<:DRLSIteration}) = (
+    SimpleTerm(:f => (is_smooth,)),
+    SimpleTerm(:g => (is_proximable,))
+)

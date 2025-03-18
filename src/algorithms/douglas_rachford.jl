@@ -117,3 +117,8 @@ DouglasRachford(;
     display,
     kwargs...,
 )
+
+get_assumptions(::Type{<:DouglasRachfordIteration}) = (
+    SimpleTerm(:f => (is_proximable,)),
+    SimpleTerm(:g => (is_proximable,))
+)

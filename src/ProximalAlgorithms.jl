@@ -3,7 +3,9 @@ module ProximalAlgorithms
 using ADTypes: ADTypes
 using DifferentiationInterface: DifferentiationInterface
 using ProximalCore
-using ProximalCore: prox, prox!
+using ProximalCore: prox, prox!, is_smooth, is_locally_smooth, is_convex, is_strongly_convex, is_proximable
+using OperatorCore: is_linear
+import Base: show
 
 const RealOrComplex{R} = Union{R,Complex{R}}
 const Maybe{T} = Union{T,Nothing}
@@ -121,6 +123,8 @@ function (alg::IterativeAlgorithm{IteratorType})(; kwargs...) where {IteratorTyp
         alg.verbose && mod(k, alg.freq) == 0 && alg.display(k, iter, state)
     end
 end
+
+include("utilities/get_assumptions.jl")
 
 # algorithm implementations
 
