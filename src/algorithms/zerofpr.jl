@@ -281,5 +281,5 @@ ZeroFPR(;
 
 get_assumptions(::Type{<:ZeroFPRIteration}) = (
     OperatorTerm(:f => (is_smooth,), :A => (is_linear,)),
-    SimpleTerm(:g => (is_proximable, is_convex)),
+    SimpleTerm(:g => (is_proximable,)),
 )

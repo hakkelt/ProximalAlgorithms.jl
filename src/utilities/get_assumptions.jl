@@ -78,7 +78,7 @@ end
 function show(io::IO, t::AssumptionTerm)
     _show_term(io, t)
     print(io, " where ")
-    _show_properties(io, t)
+    _show_properties(io, t, false)
 end
 
 function show(io::IO, t::NTuple{N,AssumptionTerm}) where {N}

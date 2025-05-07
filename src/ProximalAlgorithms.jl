@@ -140,4 +140,19 @@ include("algorithms/li_lin.jl")
 include("algorithms/sfista.jl")
 include("algorithms/panocplus.jl")
 
+get_algorithms() = [
+    SFISTA(),
+    FastForwardBackward(),
+    ZeroFPR(),
+    PANOCplus(),
+    DavisYin(),
+    VuCondat(),
+    DouglasRachford(),
+    DRLS(),
+    ChambollePock(),
+    LiLin(),
+    PANOC(),
+    ForwardBackward(),
+]
+
 end # module

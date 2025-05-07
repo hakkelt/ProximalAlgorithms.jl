@@ -88,7 +88,7 @@ Base.@kwdef struct AFBAIteration{R,Tx,Ty,Tf,Tg,Th,Tl,TL,Tbetaf,Tbetal,Ttheta,Tmu
         I
     end
     x0::Tx
-    y0::Ty
+    y0::Ty = L * x0
     beta_f::Tbetaf = if isa(f, Zero)
         real(eltype(x0))(0)
     else
