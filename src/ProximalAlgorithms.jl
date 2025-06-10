@@ -165,6 +165,8 @@ include("utilities/get_assumptions.jl")
 
 # algorithm implementations
 
+include("algorithms/cg.jl")
+include("algorithms/admm.jl")
 include("algorithms/forward_backward.jl")
 include("algorithms/fast_forward_backward.jl")
 include("algorithms/zerofpr.jl")

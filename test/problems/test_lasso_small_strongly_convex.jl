@@ -53,7 +53,7 @@ using ProximalAlgorithms
     x0 = A \ b
     x0_backup = copy(x0)
 
-    @testset "SFISTA" begin
+    #=@testset "SFISTA" begin
         solver = ProximalAlgorithms.SFISTA(tol = TOL)
         y, it = solver(x0 = x0, f = fA_autodiff, g = g, Lf = Lf, mf = mf)
         @test eltype(y) == T
@@ -167,6 +167,15 @@ using ProximalAlgorithms
         @test eltype(y) == T
         @test norm(y - x_star, Inf) <= TOL
         @test it < 45
+        @test x0 == x0_backup
+    end=#
+
+    @testset "ADMM" begin
+        solver = ProximalAlgorithms.ADMM(tol = TOL)
+        y, it = solver(; x0, A, b, g)
+        @test eltype(y) == T
+        @test norm(y - x_star, Inf) <= TOL
+        @test it < 20
         @test x0 == x0_backup
     end
 

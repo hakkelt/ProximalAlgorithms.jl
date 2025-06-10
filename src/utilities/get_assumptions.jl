@@ -19,11 +19,25 @@ get_assumptions(::IterativeAlgorithm{IteratorType}) where {IteratorType} = get_a
 const AssumptionItem{T} = Pair{Symbol,T}
 abstract type AssumptionTerm end
 
+struct LeastSquaresTerm{T} <: AssumptionTerm
+    operator::AssumptionItem{T}
+    b::Symbol
+end
+
 struct SimpleTerm{T} <: AssumptionTerm
     func::AssumptionItem{T}
 end
 
+struct RepeatedSimpleTerm{T} <: AssumptionTerm
+    func::AssumptionItem{T}
+end
+
 struct OperatorTerm{T1,T2} <: AssumptionTerm
+    func::AssumptionItem{T1}
+    operator::AssumptionItem{T2}
+end
+
+struct RepeatedOperatorTerm{T1,T2} <: AssumptionTerm
     func::AssumptionItem{T1}
     operator::AssumptionItem{T2}
 end
@@ -35,7 +49,9 @@ struct OperatorTermWithInfimalConvolution{T1,T2,T3} <: AssumptionTerm
 end
 
 _show_term(io::IO, t::SimpleTerm)  = print(io, t.func.first, "(x)")
+_show_term(io::IO, t::RepeatedSimpleTerm) = print(io, t.func.first + "ᵢ", "(x)")
 _show_term(io::IO, t::OperatorTerm) = print(io, t.func.first, "(", t.operator.first, "x)")
+_show_term(io::IO, t::RepeatedOperatorTerm) = print(io, t.func.first + "ᵢ", "(", t.operator.first + "ᵢ", "x)")
 _show_term(io::IO, t::OperatorTermWithInfimalConvolution) = print(io, "(", t.func₁.first, " □ ", t.func₂.first, ")(", t.operator.first, "x)")
 
 _show_properties(io::IO, item::AssumptionItem{T}) where {T} = join(io, item.second, ", ", ", and ")
@@ -43,11 +59,24 @@ _show_properties(io::IO, t::SimpleTerm, ::Bool) = begin
     print(io, t.func.first, " ")
     _show_properties(io, t.func)
 end
+_show_properties(io::IO, t::RepeatedSimpleTerm, ::Bool) = begin
+    print(io, t.func.first + "ᵢ", " ")
+    _show_properties(io, t.func)
+end
 _show_properties(io::IO, t::OperatorTerm, newline::Bool) = begin
     print(io, t.func.first, " ")
     _show_properties(io, t.func)
     print(io, newline ? "\n - " : "; and ")
     print(io, t.operator.first, " ")
+    if length(t.operator.second) > 0
+        _show_properties(io, t.operator)
+    end
+end
+_show_properties(io::IO, t::RepeatedOperatorTerm, newline::Bool) = begin
+    print(io, t.func.first + "ᵢ", " ")
+    _show_properties(io, t.func)
+    print(io, newline ? "\n - " : "; and ")
+    print(io, t.operator.first + "ᵢ", " ")
     if length(t.operator.second) > 0
         _show_properties(io, t.operator)
     end

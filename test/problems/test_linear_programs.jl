@@ -175,7 +175,6 @@ end
     end
 
     @testset "DavisYin" begin
-
         f = ProximalAlgorithms.AutoDifferentiable(x -> dot(c, x), AutoZygote())
         g = IndNonnegative()
         h = IndAffine(A, b)
@@ -187,13 +186,33 @@ end
         xf, it = solver(x0 = x0, f = f, g = g, h = h)
 
         @test eltype(xf) == T
+        @test it <= maxit
+        @test norm(xf - x_star) <= 1e2 * tol
+        @test x0 == x0_backup
+    end
+
+    @testset "ADMM" begin
+        x0 = zeros(T, n)
+        x0_backup = copy(x0)
+
+        solver = ProximalAlgorithms.ADMM(tol = tol, maxit = maxit)
+        (x, y), it = solver(
+            x0 = x0,
+            A = A,
+            b = 0,
+            g = (IndNonnegative(), IndPoint(b)),
+            B = (I, A),
+        )
+
+        @test eltype(x) == T
+        @test eltype(y) == T
 
         @test it <= maxit
 
-        @assert norm(xf - x_star) <= 1e2 * tol
+        assert_lp_solution(c, A, b, x, y, 1000 * tol)
 
         @test x0 == x0_backup
-
+        @test y0 == y0_backup
     end
 
 end

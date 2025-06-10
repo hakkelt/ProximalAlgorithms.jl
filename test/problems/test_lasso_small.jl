@@ -3,7 +3,7 @@ using Test
 
 using Zygote
 using DifferentiationInterface: AutoZygote
-using ProximalOperators: NormL1, LeastSquares
+using ProximalOperators: NormL1, LeastSquares, SqrNormL2, ElasticNet, Translate
 using ProximalAlgorithms
 using ProximalAlgorithms:
     LBFGS,
@@ -279,6 +279,23 @@ using ProximalAlgorithms:
         @test eltype(y) == T
         @test norm(y - x_star, Inf) <= 10 * TOL
         @test it < 100
+        @test x0 == x0_backup
+    end
+
+    @testset "ADMM" begin
+        x0 = zeros(T, n)
+        x0_backup = copy(x0)
+        solver = ProximalAlgorithms.ADMM(tol = TOL, rho = R(10))
+        x_admm, it_admm = @inferred solver(
+            x0 = x0,
+            A = A,
+            b = b,
+            g = g,
+            B = LinearAlgebra.I,
+        )
+        @test eltype(x_admm) == T
+        @test norm(x_admm - x_star, Inf) <= TOL
+        @test it_admm < 200
         @test x0 == x0_backup
     end
 

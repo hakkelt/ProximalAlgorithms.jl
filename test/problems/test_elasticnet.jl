@@ -105,4 +105,44 @@ using DifferentiationInterface: AutoZygote
         @test y0 == y0_backup
 
     end
+
+    @testset "ADMM" begin
+
+        # with known initial iterate
+
+        x0 = zeros(T, n)
+        x0_backup = copy(x0)
+        solver = ProximalAlgorithms.ADMM(tol = R(1e-6))
+        x_admm, it_admm = @inferred solver(
+            x0 = x0,
+            A = A,
+            b = b,
+            g = (reg1, reg2),
+            B = (I, I),
+            rho = [R(1), R(1)],
+        )
+        @test eltype(x_admm) == T
+        @test norm(x_admm - x_star, Inf) <= 1e-3
+        @test it_admm <= 150
+        @test x0 == x0_backup
+
+        # with random initial iterate
+
+        x0 = randn(T, n)
+        x0_backup = copy(x0)
+        solver = ProximalAlgorithms.ADMM(tol = R(1e-6))
+        x_admm, it_admm = @inferred solver(
+            x0 = x0,
+            A = A,
+            b = b,
+            g = (reg1, reg2),
+            B = (I, I),
+            rho = [R(1), R(1)],
+        )
+        @test eltype(x_admm) == T
+        @test norm(x_admm - x_star, Inf) <= 1e-3
+        @test it_admm <= 150
+        @test x0 == x0_backup
+
+    end
 end
