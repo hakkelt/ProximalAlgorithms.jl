@@ -3,12 +3,6 @@
 # algorithms", SIAM Journal on Optimization, vol. 28, no. 3, pp. 2274–2303
 # (2018).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     ZeroFPRIteration(; <keyword-arguments>)
 

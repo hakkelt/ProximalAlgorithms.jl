@@ -1,12 +1,6 @@
 # Lions, Mercier, “Splitting algorithms for the sum of two nonlinear
 # operators,” SIAM Journal on Numerical Analysis, vol. 16, pp. 964–979 (1979).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     ForwardBackwardIteration(; <keyword-arguments>)
 

@@ -5,12 +5,6 @@
 # for Linear Inverse Problems", SIAM Journal on Imaging Sciences, vol. 2,
 # no. 1, pp. 183-202 (2009).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     FastForwardBackwardIteration(; <keyword-arguments>)
 
@@ -151,7 +145,7 @@ default_stopping_criterion(
 ) = norm(state.res, Inf) / state.gamma <= tol
 default_solution(::FastForwardBackwardIteration, state::FastForwardBackwardState) = state.z
 default_display(it, ::FastForwardBackwardIteration, state::FastForwardBackwardState) =
-    @printf("%5d | %.3e | %.3e\n", it, state.gamma, norm(state.res, Inf) / state.gamma)
+    @printf("%5d | %.3e | %.3e | %.3e | %.3e\n", it, state.gamma, state.f_x, state.g_z, norm(state.res, Inf) / state.gamma)
 
 """
     FastForwardBackward(; <keyword-arguments>)

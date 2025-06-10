@@ -3,9 +3,15 @@ module ProximalAlgorithms
 using ADTypes: ADTypes
 using DifferentiationInterface: DifferentiationInterface
 using ProximalCore
-using ProximalCore: prox, prox!, is_smooth, is_locally_smooth, is_convex, is_strongly_convex, is_proximable
-using OperatorCore: is_linear
+using ProximalCore: Zero, IndZero, convex_conjugate, prox, prox!, is_smooth, is_locally_smooth, is_convex, is_strongly_convex, is_proximable
+using OperatorCore: is_linear, is_symmetric, is_positive_definite
+using LinearAlgebra
+using Base.Iterators
+using Printf
+
 import Base: show
+import Base: *
+import LinearAlgebra: mul!
 
 const RealOrComplex{R} = Union{R,Complex{R}}
 const Maybe{T} = Union{T,Nothing}
@@ -113,8 +119,39 @@ IterativeAlgorithm(T; maxit, stop, solution, verbose, freq, display, kwargs...) 
         kwargs,
     )
 
+"""
+    get_iterator(alg::IterativeAlgorithm{IteratorType}) where {IteratorType}
+
+Return an iterator of type `IteratorType` constructed from the algorithm `alg`.
+This is a convenience function to allow for easy access to the iterator type
+associated with an `IterativeAlgorithm`.
+
+# Example
+```julia
+julia> using ProximalAlgorithms: CG, get_iterator
+
+julia> alg = CG(maxit=3, tol=1e-8);
+
+julia> iter = get_iterator(alg, A=reshape(collect(1:25)), b=collect(1:5));
+
+julia>  for (k, state) in enumerate(iter)
+            if k >= alg.maxit || alg.stop(iter, state)
+                alg.verbose && alg.display(k, iter, state)
+                return (alg.solution(iter, state), k)
+            end
+            alg.verbose && mod(k, alg.freq) == 0 && alg.display(k, iter, state)
+        end
+    1 | 7.416e+00
+    2 | 2.742e+00
+    3 | 2.300e+01
+([0.5581699346405239, 0.31633986928104635, 0.07450980392156867, -0.16732026143790907, -0.4091503267973867], 3)
+```
+"""
+get_iterator(alg::IterativeAlgorithm{IteratorType}; kwargs...) where {IteratorType} =
+    IteratorType(; alg.kwargs..., kwargs...)
+
 function (alg::IterativeAlgorithm{IteratorType})(; kwargs...) where {IteratorType}
-    iter = IteratorType(; alg.kwargs..., kwargs...)
+    iter = get_iterator(alg; kwargs...)
     for (k, state) in enumerate(iter)
         if k >= alg.maxit || alg.stop(iter, state)
             alg.verbose && alg.display(k, iter, state)

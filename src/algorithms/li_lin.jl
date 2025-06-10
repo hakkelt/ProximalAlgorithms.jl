@@ -1,12 +1,6 @@
 # Li, Lin, "Accelerated Proximal Gradient Methods for Nonconvex Programming",
 # Proceedings of NIPS 2015 (2015).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     LiLinIteration(; <keyword-arguments>)
 

@@ -2,12 +2,6 @@
 # nonconvex optimization: Accelerated and Newton-type linesearch algorithms",
 # Computational Optimization and Applications, vol. 82, no. 2, pp. 395-440 (2022).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 function drls_default_gamma(f::Tf, mf, Lf, alpha, lambda) where {Tf}
     if mf !== nothing && mf > 0
         return 1 / (alpha * mf)

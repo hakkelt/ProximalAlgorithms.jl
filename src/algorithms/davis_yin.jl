@@ -2,11 +2,6 @@
 # Applications", Set-Valued and Variational Analysis, vol. 25, no. 4,
 # pp. 829–858 (2017).
 
-using Printf
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     DavisYinIteration(; <keyword-arguments>)
 

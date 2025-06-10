@@ -2,12 +2,6 @@
 # for nonlinear model predictive control", 56th IEEE Conference on Decision
 # and Control (2017).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     PANOCIteration(; <keyword-arguments>)
 

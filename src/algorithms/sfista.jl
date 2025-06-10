@@ -1,11 +1,5 @@
 # An implementation of a FISTA-like method, where the smooth part of the objective function can be strongly convex.
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero
-using LinearAlgebra
-using Printf
-
 """
     SFISTAIteration(; <keyword-arguments>)
 

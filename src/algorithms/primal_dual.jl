@@ -20,12 +20,6 @@
 # cocoercive operators", Advances in Computational Mathematics, vol. 38, no. 3,
 # pp. 667-681 (2013).
 
-using Base.Iterators
-using ProximalAlgorithms.IterationTools
-using ProximalCore: Zero, IndZero, convex_conjugate
-using LinearAlgebra
-using Printf
-
 """
     AFBAIteration(; <keyword-arguments>)
 
