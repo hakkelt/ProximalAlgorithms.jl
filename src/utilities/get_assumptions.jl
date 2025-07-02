@@ -24,6 +24,10 @@ struct LeastSquaresTerm{T} <: AssumptionTerm
     b::Symbol
 end
 
+struct SquaredL2Term{T} <: AssumptionTerm
+    λ::Symbol
+end
+
 struct SimpleTerm{T} <: AssumptionTerm
     func::AssumptionItem{T}
 end
