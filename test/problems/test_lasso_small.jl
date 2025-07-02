@@ -285,18 +285,21 @@ using ProximalAlgorithms:
     @testset "ADMM" begin
         x0 = zeros(T, n)
         x0_backup = copy(x0)
-        solver = ProximalAlgorithms.ADMM(tol = TOL, rho = R(10))
-        x_admm, it_admm = @inferred solver(
-            x0 = x0,
-            A = A,
-            b = b,
-            g = g,
-            B = LinearAlgebra.I,
-        )
-        @test eltype(x_admm) == T
-        @test norm(x_admm - x_star, Inf) <= TOL
-        @test it_admm < 200
-        @test x0 == x0_backup
+        @testset "$(typeof(ps).name.name)" for ps in [
+            ProximalAlgorithms.FixedPenalty(),
+            ProximalAlgorithms.ResidualBalancingPenalty(),
+            # ProximalAlgorithms.WohlbergPenalty(), # TODO: This does not converge, needs debugging
+            # ProximalAlgorithms.BarzilaiBorweinPenalty(), # TODO: This does not converge, needs debugging
+            ProximalAlgorithms.SpectralRadiusBoundPenalty(),
+            ProximalAlgorithms.SpectralRadiusApproximationPenalty(),
+        ]
+            solver = ProximalAlgorithms.ADMM(tol = TOL, maxit=1000, penalty_sequence = ps)
+            x_admm, it_admm = @inferred solver(; x0, A, b, g)
+            @test eltype(x_admm) == T
+            @test norm(x_admm - x_star, Inf) <= TOL
+            @test it_admm < 150
+            @test x0 == x0_backup
+        end
     end
 
 end

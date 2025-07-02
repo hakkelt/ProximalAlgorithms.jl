@@ -179,7 +179,16 @@ include("algorithms/li_lin.jl")
 include("algorithms/sfista.jl")
 include("algorithms/panocplus.jl")
 
+include("penalty_sequences/penalty_sequence_base.jl")
+include("penalty_sequences/fixed_penalty.jl")
+include("penalty_sequences/residual_balancing_penalty.jl")
+#include("penalty_sequences/wohlberg_penalty.jl")
+#include("penalty_sequences/barzilai_borwein_penalty.jl")
+include("penalty_sequences/spectral_radius_approx_penalty.jl")
+include("penalty_sequences/spectral_radius_bound_penalty.jl")
+
 get_algorithms() = [
+    CG(),
     SFISTA(),
     FastForwardBackward(),
     ZeroFPR(),
@@ -187,6 +196,7 @@ get_algorithms() = [
     DavisYin(),
     VuCondat(),
     DouglasRachford(),
+    ADMM(),
     DRLS(),
     ChambollePock(),
     LiLin(),

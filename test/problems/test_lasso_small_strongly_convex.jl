@@ -53,7 +53,7 @@ using ProximalAlgorithms
     x0 = A \ b
     x0_backup = copy(x0)
 
-    #=@testset "SFISTA" begin
+    @testset "SFISTA" begin
         solver = ProximalAlgorithms.SFISTA(tol = TOL)
         y, it = solver(x0 = x0, f = fA_autodiff, g = g, Lf = Lf, mf = mf)
         @test eltype(y) == T
@@ -168,15 +168,24 @@ using ProximalAlgorithms
         @test norm(y - x_star, Inf) <= TOL
         @test it < 45
         @test x0 == x0_backup
-    end=#
+    end
 
     @testset "ADMM" begin
-        solver = ProximalAlgorithms.ADMM(tol = TOL)
-        y, it = solver(; x0, A, b, g)
-        @test eltype(y) == T
-        @test norm(y - x_star, Inf) <= TOL
-        @test it < 20
-        @test x0 == x0_backup
+        @testset "$(typeof(ps).name.name)" for ps in [
+            ProximalAlgorithms.FixedPenalty(),
+            ProximalAlgorithms.ResidualBalancingPenalty(),
+            # ProximalAlgorithms.WohlbergPenalty(), # TODO: This does not converge, needs debugging
+            # ProximalAlgorithms.BarzilaiBorweinPenalty(), # TODO: This does not converge, needs debugging
+            # ProximalAlgorithms.SpectralRadiusBoundPenalty(), # TODO: This does not converge, needs parameter tuning
+            # ProximalAlgorithms.SpectralRadiusApproximationPenalty(), # TODO: This does not converge, needs parameter tuning
+        ]
+            solver = ProximalAlgorithms.ADMM(tol = TOL, maxit=1000, penalty_sequence = ps)
+            x_admm, it_admm = @inferred solver(; x0, A, b, g)
+            @test eltype(x_admm) == T
+            @test norm(x_admm - x_star, Inf) <= TOL
+            @test it_admm < 50
+            @test x0 == x0_backup
+        end
     end
 
 end

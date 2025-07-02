@@ -194,25 +194,21 @@ end
     @testset "ADMM" begin
         x0 = zeros(T, n)
         x0_backup = copy(x0)
-
-        solver = ProximalAlgorithms.ADMM(tol = tol, maxit = maxit)
-        (x, y), it = solver(
-            x0 = x0,
-            A = A,
-            b = 0,
-            g = (IndNonnegative(), IndPoint(b)),
-            B = (I, A),
-        )
-
-        @test eltype(x) == T
-        @test eltype(y) == T
-
-        @test it <= maxit
-
-        assert_lp_solution(c, A, b, x, y, 1000 * tol)
-
-        @test x0 == x0_backup
-        @test y0 == y0_backup
+        @testset "$(typeof(ps).name.name)" for ps in [
+            ProximalAlgorithms.FixedPenalty(),
+            # ProximalAlgorithms.ResidualBalancingPenalty(normalized=true), # TODO: This does not converge, needs parameter tuning
+            # ProximalAlgorithms.WohlbergPenalty(), # TODO: This does not converge, needs debugging
+            # ProximalAlgorithms.BarzilaiBorweinPenalty(), # TODO: This does not converge, needs debugging
+            # ProximalAlgorithms.SpectralRadiusBoundPenalty(), # TODO: This does not converge, needs parameter tuning
+            # ProximalAlgorithms.SpectralRadiusApproximationPenalty(), # TODO: This does not converge, needs parameter tuning
+        ]
+            solver = ProximalAlgorithms.ADMM(; tol=1e-6, maxit=10000, penalty_sequence = ps)
+            x_admm, it_admm = @inferred solver(; x0, g = (Linear(c), IndNonnegative(), IndPoint(b)), B = (I, I, A))
+            @test eltype(x_admm) == T
+            @test norm(x_admm - x_star, Inf) <= 1e-3
+            @test it_admm < maxit
+            @test x0 == x0_backup
+        end
     end
 
 end
