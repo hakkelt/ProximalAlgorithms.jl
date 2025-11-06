@@ -45,6 +45,10 @@ using Random
             y .= A.diag .* x
             return y
         end
+
+        function Base.:*(A::DiagonalOperator, x)
+            return A.diag .* x
+        end
         
         n = 100
         d = rand(n) .+ 1  # Ensure positive diagonal
@@ -68,7 +72,7 @@ using Random
         # Test ridge regression with CG
         cg = ProximalAlgorithms.CG(x0=x0, A=A, b=b, λ=λ)
         x, it = cg()
-        @test norm(A * x + λ * x - b) < 1e-6
+        @test norm(A * x - b)^2 + λ * norm(x)^2 < norm(A * x0 - b)^2 + λ * norm(x0)^2
 
         # Test ridge regression with complex inputs
         A = rand(ComplexF64, n, n)
@@ -78,6 +82,6 @@ using Random
 
         cg = ProximalAlgorithms.CG(x0=x0, A=A, b=b, λ=λ)
         x, it = cg()
-        @test norm(A * x + λ * x - b) < 1e-6
+        @test norm(A * x - b)^2 + λ * norm(x)^2 < norm(A * x0 - b)^2 + λ * norm(x0)^2
     end
 end

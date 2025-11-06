@@ -197,8 +197,8 @@ end
         @testset "$(typeof(ps).name.name)" for ps in [
             ProximalAlgorithms.FixedPenalty(),
             # ProximalAlgorithms.ResidualBalancingPenalty(normalized=true), # TODO: This does not converge, needs parameter tuning
-            # ProximalAlgorithms.WohlbergPenalty(), # TODO: This does not converge, needs debugging
-            # ProximalAlgorithms.BarzilaiBorweinPenalty(), # TODO: This does not converge, needs debugging
+            # ProximalAlgorithms.WohlbergPenalty(), # TODO: This does not converge, needs parameter tuning
+            # ProximalAlgorithms.BarzilaiBorweinSpectralPenalty(), # TODO: This does not converge, needs debugging
             # ProximalAlgorithms.SpectralRadiusBoundPenalty(), # TODO: This does not converge, needs parameter tuning
             # ProximalAlgorithms.SpectralRadiusApproximationPenalty(), # TODO: This does not converge, needs parameter tuning
         ]

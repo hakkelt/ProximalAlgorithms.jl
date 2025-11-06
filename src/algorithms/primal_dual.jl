@@ -106,7 +106,7 @@ end
 
 Base.IteratorSize(::Type{<:AFBAIteration}) = Base.IsInfinite()
 
-get_assumptions(::Type{<:AFBAIteration}) = (
+get_assumptions(::Type{<:AFBAIteration}) = AssumptionGroup(
     SimpleTerm(:f => (is_smooth, is_convex)),
     SimpleTerm(:g => (is_proximable, is_convex)),
     OperatorTermWithInfimalConvolution(:h => (is_proximable, is_convex), :l => (is_proximable, is_strongly_convex), :L => (is_linear,))
@@ -135,7 +135,7 @@ See also: [`AFBAIteration`](@ref), [`VuCondat`](@ref).
 """
 VuCondatIteration(; kwargs...) = AFBAIteration(kwargs..., theta = 2)
 
-get_assumptions(::typeof(VuCondatIteration)) = (
+get_assumptions(::typeof(VuCondatIteration)) = AssumptionGroup(
     SimpleTerm(:f => (is_smooth, is_convex)),
     SimpleTerm(:g => (is_proximable, is_convex)),
     OperatorTermWithInfimalConvolution(:h => (is_proximable, is_convex), :l => (is_proximable, is_strongly_convex), :L => (is_linear,))
@@ -163,7 +163,7 @@ for all other arguments see [`AFBAIteration`](@ref).
 ChambollePockIteration(; kwargs...) =
     AFBAIteration(kwargs..., theta = 2, f = Zero(), l = IndZero())
 
-get_assumptions(::T) where {T<:typeof(ChambollePockIteration)} = (
+get_assumptions(::T) where {T<:typeof(ChambollePockIteration)} = AssumptionGroup(
     SimpleTerm(:g => (is_proximable, is_convex)),
     OperatorTerm(:h => (is_proximable, is_convex), :L => (is_linear,))
 )
@@ -224,8 +224,8 @@ end
 default_stopping_criterion(tol, ::AFBAIteration, state::AFBAState) =
     norm(state.FPR_x, Inf) + norm(state.FPR_y, Inf) <= tol
 default_solution(::AFBAIteration, state::AFBAState) = (state.xbar, state.ybar)
-default_display(it, ::AFBAIteration, state::AFBAState) =
-    @printf("%6d | %7.4e\n", it, norm(state.FPR_x, Inf) + norm(state.FPR_y, Inf))
+default_iteration_summary(it, ::AFBAIteration, state::AFBAState) =
+    ("" => it, "‖x̄ - x‖" => norm(state.FPR_x, Inf), "‖ȳ - y‖" => norm(state.FPR_y, Inf))
 
 """
     AFBA(; <keyword-arguments>)
@@ -247,11 +247,12 @@ See also: [`AFBAIteration`](@ref), [`IterativeAlgorithm`](@ref).
 # Arguments
 - `maxit::Int=10_000`: maximum number of iteration
 - `tol::1e-5`: tolerance for the default stopping criterion
-- `stop::Function`: termination condition, `stop(::T, state)` should return `true` when to stop the iteration
-- `solution::Function`: solution mapping, `solution(::T, state)` should return the identified solution
+- `stop::Function=(iter, state) -> default_stopping_criterion(tol, iter, state)`: termination condition, `stop(::T, state)` should return `true` when to stop the iteration
+- `solution::Function=default_solution`: solution mapping, `solution(::T, state)` should return the identified solution
 - `verbose::Bool=false`: whether the algorithm state should be displayed
-- `freq::Int=100`: every how many iterations to display the algorithm state
-- `display::Function`: display function, `display(::Int, ::T, state)` should display a summary of the iteration state
+- `freq::Int=100`: every how many iterations to display the algorithm state. If `freq <= 0`, only the final iteration is displayed.
+- `summary::Function=default_iteration_summary`: function to generate iteration summaries, `summary(::Int, iter::T, state)` should return a summary of the iteration state
+- `display::Function=default_display`: display function, `display(::Int, ::T, state)` should display a summary of the iteration state
 - `kwargs...`: additional keyword arguments to pass on to the `AFBAIteration` constructor upon call
 
 # References
@@ -265,6 +266,7 @@ AFBA(;
     solution = default_solution,
     verbose = false,
     freq = 100,
+    summary = default_iteration_summary,
     display = default_display,
     kwargs...,
 ) = IterativeAlgorithm(
@@ -274,6 +276,7 @@ AFBA(;
     solution,
     verbose,
     freq,
+    summary,
     display,
     kwargs...,
 )
@@ -298,11 +301,12 @@ See also: [`VuCondatIteration`](@ref), [`AFBAIteration`](@ref), [`IterativeAlgor
 # Arguments
 - `maxit::Int=10_000`: maximum number of iteration
 - `tol::1e-5`: tolerance for the default stopping criterion
-- `stop::Function`: termination condition, `stop(::T, state)` should return `true` when to stop the iteration
-- `solution::Function`: solution mapping, `solution(::T, state)` should return the identified solution
+- `stop::Function=(iter, state) -> default_stopping_criterion(tol, iter, state)`: termination condition, `stop(::T, state)` should return `true` when to stop the iteration
+- `solution::Function=default_solution`: solution mapping, `solution(::T, state)` should return the identified solution
 - `verbose::Bool=false`: whether the algorithm state should be displayed
-- `freq::Int=100`: every how many iterations to display the algorithm state
-- `display::Function`: display function, `display(::Int, ::T, state)` should display a summary of the iteration state
+- `freq::Int=100`: every how many iterations to display the algorithm state. If `freq <= 0`, only the final iteration is displayed.
+- `summary::Function=default_iteration_summary`: function to generate iteration summaries, `summary(::Int, iter::T, state)` should return a summary of the iteration state
+- `display::Function=default_display`: display function, `display(::Int, ::T, state)` should display a summary of the iteration state
 - `kwargs...`: additional keyword arguments to pass on to the `AFBAIteration` constructor upon call
 
 # References
@@ -330,11 +334,12 @@ See also: [`ChambollePockIteration`](@ref), [`AFBAIteration`](@ref), [`Iterative
 # Arguments
 - `maxit::Int=10_000`: maximum number of iteration
 - `tol::1e-5`: tolerance for the default stopping criterion
-- `stop::Function`: termination condition, `stop(::T, state)` should return `true` when to stop the iteration
-- `solution::Function`: solution mapping, `solution(::T, state)` should return the identified solution
+- `stop::Function=(iter, state) -> default_stopping_criterion(tol, iter, state)`: termination condition, `stop(::T, state)` should return `true` when to stop the iteration
+- `solution::Function=default_solution`: solution mapping, `solution(::T, state)` should return the identified solution
 - `verbose::Bool=false`: whether the algorithm state should be displayed
-- `freq::Int=100`: every how many iterations to display the algorithm state
-- `display::Function`: display function, `display(::Int, ::T, state)` should display a summary of the iteration state
+- `freq::Int=100`: every how many iterations to display the algorithm state. If `freq <= 0`, only the final iteration is displayed.
+- `summary::Function=default_iteration_summary`: function to generate iteration summaries, `summary(::Int, iter::T, state)` should return a summary of the iteration state
+- `display::Function=default_display`: display function, `display(::Int, ::T, state)` should display a summary of the iteration state
 - `kwargs...`: additional keyword arguments to pass on to the `AFBAIteration` constructor upon call
 
 # References

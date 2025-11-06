@@ -1,7 +1,7 @@
 using ProximalAlgorithms: get_assumptions
 
 @testset "get_assumptions function" begin
-    @test length(get_assumptions(ProximalAlgorithms.CGIteration)) == 1
+    @test length(get_assumptions(ProximalAlgorithms.CGIteration)) == 2
     @test length(get_assumptions(ProximalAlgorithms.ADMMIteration)) == 2
     @test length(get_assumptions(ProximalAlgorithms.DavisYinIteration)) == 3
     @test length(get_assumptions(ProximalAlgorithms.DouglasRachfordIteration)) == 2

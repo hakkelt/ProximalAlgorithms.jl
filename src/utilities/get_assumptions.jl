@@ -18,13 +18,20 @@ get_assumptions(::IterativeAlgorithm{IteratorType}) where {IteratorType} = get_a
 
 const AssumptionItem{T} = Pair{Symbol,T}
 abstract type AssumptionTerm end
+struct AssumptionGroup{T}
+    terms::T
+    function AssumptionGroup(terms...)
+        @assert all(t -> t isa AssumptionTerm, terms) "All elements of the tuple must be of type AssumptionTerm."
+        new{typeof(terms)}(terms)
+    end
+end
 
 struct LeastSquaresTerm{T} <: AssumptionTerm
     operator::AssumptionItem{T}
     b::Symbol
 end
 
-struct SquaredL2Term{T} <: AssumptionTerm
+struct SquaredL2Term <: AssumptionTerm
     λ::Symbol
 end
 
@@ -52,19 +59,27 @@ struct OperatorTermWithInfimalConvolution{T1,T2,T3} <: AssumptionTerm
     operator::AssumptionItem{T3}
 end
 
+_show_term(io::IO, t::LeastSquaresTerm) = print(io, "ls(", t.operator.first, "x - ", t.b, ")")
+_show_term(io::IO, t::SquaredL2Term) = print(io, t.λ, " * ‖x‖²")
 _show_term(io::IO, t::SimpleTerm)  = print(io, t.func.first, "(x)")
-_show_term(io::IO, t::RepeatedSimpleTerm) = print(io, t.func.first + "ᵢ", "(x)")
+_show_term(io::IO, t::RepeatedSimpleTerm) = print(io, t.func.first, "ᵢ", "(x)")
 _show_term(io::IO, t::OperatorTerm) = print(io, t.func.first, "(", t.operator.first, "x)")
-_show_term(io::IO, t::RepeatedOperatorTerm) = print(io, t.func.first + "ᵢ", "(", t.operator.first + "ᵢ", "x)")
+_show_term(io::IO, t::RepeatedOperatorTerm) = print(io, t.func.first, "ᵢ", "(", t.operator.first, "ᵢ", "x)")
 _show_term(io::IO, t::OperatorTermWithInfimalConvolution) = print(io, "(", t.func₁.first, " □ ", t.func₂.first, ")(", t.operator.first, "x)")
 
 _show_properties(io::IO, item::AssumptionItem{T}) where {T} = join(io, item.second, ", ", ", and ")
+_show_properties(io::IO, t::LeastSquaresTerm, ::Bool) = begin
+    print(io, t.operator.first, " ")
+    _show_properties(io, t.operator)
+    print(io, " and ", t.b, " is array")
+end
+_show_properties(io::IO, t::SquaredL2Term, ::Bool) = print(io, t.λ, " is scalar or array")
 _show_properties(io::IO, t::SimpleTerm, ::Bool) = begin
     print(io, t.func.first, " ")
     _show_properties(io, t.func)
 end
 _show_properties(io::IO, t::RepeatedSimpleTerm, ::Bool) = begin
-    print(io, t.func.first + "ᵢ", " ")
+    print(io, t.func.first, "ᵢ", " ")
     _show_properties(io, t.func)
 end
 _show_properties(io::IO, t::OperatorTerm, newline::Bool) = begin
@@ -77,10 +92,10 @@ _show_properties(io::IO, t::OperatorTerm, newline::Bool) = begin
     end
 end
 _show_properties(io::IO, t::RepeatedOperatorTerm, newline::Bool) = begin
-    print(io, t.func.first + "ᵢ", " ")
+    print(io, t.func.first, "ᵢ", " ")
     _show_properties(io, t.func)
     print(io, newline ? "\n - " : "; and ")
-    print(io, t.operator.first + "ᵢ", " ")
+    print(io, t.operator.first, "ᵢ", " ")
     if length(t.operator.second) > 0
         _show_properties(io, t.operator)
     end
@@ -114,16 +129,17 @@ function show(io::IO, t::AssumptionTerm)
     _show_properties(io, t, false)
 end
 
-function show(io::IO, t::NTuple{N,AssumptionTerm}) where {N}
+function show(io::IO, t::AssumptionGroup)
+    N = length(t.terms)
     for i in 1:N
-        _show_term(io, t[i])
+        _show_term(io, t.terms[i])
         if i < N
             print(io, " + ")
         end
     end
     print(io, " where ")
     for i in 1:N
-        _show_properties(io, t[i], false)
+        _show_properties(io, t.terms[i], false)
         if i < N - 1
             print(io, "; ")
         elseif i < N
@@ -132,18 +148,28 @@ function show(io::IO, t::NTuple{N,AssumptionTerm}) where {N}
     end
 end
 
-function show(io::IO, ::MIME"text/plain", t::NTuple{N,AssumptionTerm}) where {N}
+function show(io::IO, ::MIME"text/plain", t::AssumptionGroup)
+    N = length(t.terms)
     for i in 1:N
-        _show_term(io, t[i])
+        _show_term(io, t.terms[i])
         if i < N
             print(io, " + ")
         end
     end
     print(io, " where\n - ")
     for i in 1:N
-        _show_properties(io, t[i], true)
+        _show_properties(io, t.terms[i], true)
         if i < N
             print(io, "\n - ")
         end
     end
+end
+
+function Base.iterate(t::AssumptionGroup, state=1)
+    state > length(t.terms) && return nothing
+    return (t.terms[state], state + 1)
+end
+
+function Base.length(t::AssumptionGroup)
+    return length(t.terms)
 end

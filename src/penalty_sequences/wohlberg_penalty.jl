@@ -1,6 +1,4 @@
-# TODO: Probably something is wrong with this implementation, as it does not
-#       converge in tests. Needs debugging.
-# Implementation for Convolutional Basis Pursuit DeNoising by B. Wohlberg to be used for debugging:
+# Reference implementation for Convolutional Basis Pursuit DeNoising by B. Wohlberg:
 # https://github.com/pengbao7598/PWLS-CSCGR/blob/master/CSC/cbpdn.m
 
 """

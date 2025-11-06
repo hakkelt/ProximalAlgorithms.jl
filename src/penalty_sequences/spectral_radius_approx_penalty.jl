@@ -2,7 +2,7 @@
     SpectralRadiusApproximationPenalty{R,T}
 
 Adaptive penalty parameter strategy based on spectral radius approximation. Updates penalties using the formula:
-    ρ = ||yᵢ - yᵢ₋₁|| / ||(zᵢ - zᵢ₋₁)||
+    ρ = ‖yᵢ - yᵢ₋₁‖ / ‖(zᵢ - zᵢ₋₁)‖
 
 # Arguments
 - `rho::R`: Initial penalty parameters (one per regularizer block)
@@ -27,7 +27,7 @@ Adaptive penalty parameter strategy based on spectral radius approximation. Upda
     adp_start_iter::Int = 2
     adp_end_iter::Int = typemax(Int)
     current_iter::Int = 0
-    uᵢ₋₁::Union{Nothing,NTuple} = nothing  # Storage for previous u values
+    uᵢ₋₁::Union{Nothing,Tuple} = nothing  # Storage for previous u values
     function SpectralRadiusApproximationPenalty{R,T}(
         rho::R,
         tau::T,
@@ -35,7 +35,7 @@ Adaptive penalty parameter strategy based on spectral radius approximation. Upda
         adp_start_iter::Int,
         adp_end_iter::Int,
         current_iter::Int,
-        uᵢ₋₁::Union{Nothing,NTuple}
+        uᵢ₋₁::Union{Nothing,Tuple}
     ) where {R,T}
         @assert adp_start_iter >= 2
         @assert adp_start_iter <= adp_end_iter

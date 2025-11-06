@@ -26,17 +26,15 @@ struct BarzilaiBorweinStorage{N,Ty,Tx}
 	temp::NTuple{N,Ty}
 	temp₂::NTuple{N,Ty}
 	temp₃::NTuple{N,Tx}
-	function BarzilaiBorweinStorage(
-		ρ, state::ADMMState{R,Tx,NTx,NTBHx}
-	) where {N,R,Tx,NTx,Ty,NTBHx<:NTuple{N,Ty}}
-		new{N,Ty,Tx}(
+	function BarzilaiBorweinStorage(ρ, state::ADMMState)
+		new{length(state.u),typeof(state.u[1]),typeof(state.x)}(
 			copy.(state.u), # uᵢ₋₁
-			Tuple(ρ .* (state.u .+ state.rᵏ)), # ŷᵢ₋₁
+			ntuple(i -> ρ[i] * (state.u[i] + state.rᵏ[i]), length(state.u)), # ŷᵢ₋₁
 			copy(state.x), # xᵢ₋₁
 			copy.(state.z), # zᵢ₋₁
 			similar.(state.u), # temp
 			similar.(state.u), # temp₂
-			Tuple([similar(state.x) for _ in 1:N]), # temp₃
+			ntuple(i -> similar(state.x), length(state.u)), # temp₃
 		)
 	end
 end

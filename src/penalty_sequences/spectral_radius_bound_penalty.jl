@@ -2,7 +2,7 @@
     SpectralRadiusBoundPenalty{R,T}
 
 Adaptive penalty parameter strategy based on spectral radius bound. Updates penalties using the formula:
-    ρ = ||yᵢ|| / ||zᵢ||
+    ρ = ‖yᵢ‖ / ‖zᵢ‖
 
 # Arguments
 - `rho::R`: Initial penalty parameters (one per regularizer block)
