@@ -17,7 +17,11 @@ struct ADMMIteration{R,Tx,TA,Tb,TAHb,Tg,TB,TP,Tyz,Tps}
 	y0::Tyz
 	z0::Tyz
 	penalty_sequence::Tps
+	threaded::Bool
 end
+
+ADMMIteration(x0, A, b, AHb, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0, penalty_sequence) =
+	ADMMIteration(x0, A, b, AHb, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0, penalty_sequence, true)
 
 """
 	ADMMIteration(; <keyword-arguments>)
@@ -80,6 +84,7 @@ function ADMMIteration(;
 	y0=nothing,
 	z0=nothing,
 	penalty_sequence=nothing,
+	threaded=true,
 )
 	if isnothing(A) && !isnothing(b)
 		throw(ArgumentError("A must be provided if b is given"))
@@ -142,7 +147,7 @@ function ADMMIteration(;
 	end
 
 	return ADMMIteration(
-		x0, A, b, AHb, g, B, P, P_is_inverse, R(cg_tol), cg_maxit, y0, z0, ps
+		x0, A, b, AHb, g, B, P, P_is_inverse, R(cg_tol), cg_maxit, y0, z0, ps, threaded
 	)
 end
 
@@ -221,21 +226,52 @@ function get_cg_state(iter)
 	end
 end
 
-function get_cg_operator(iter)
-	# Build the CG operator for the x update
-	# If A is not provided, we assume a simple identity operator
-	# cg_operator = A'*A + sum(rho[i] * (B[i]' * B[i]) for i in eachindex(g))
-	rho = iter.penalty_sequence.rho
-	cg_operator = isnothing(iter.A) ? nothing : iter.A' * iter.A
-	for i in eachindex(iter.g)
-		new_op = rho[i] * (iter.B[i]' * iter.B[i])
-		if isnothing(cg_operator)
-			cg_operator = new_op
-		else
-			cg_operator += new_op
-		end
+"""
+	ADMMNormalOp(AᴴA, BᴴB, rho, tmp, sz)
+
+The x-update system operator `AᴴA + ∑ᵢ ρᵢ BᵢᴴBᵢ`, built once and reused for the whole solve.
+
+`AᴴA` (`nothing` when `A` is not given) and each `BᴴB[i] = Bᵢ'Bᵢ` are fixed operators; the
+penalty weights `ρᵢ` are read *live* from `rho`, which aliases `iter.penalty_sequence.rho`
+(every `PenaltySequence` mutates that vector in place, never reassigns it). So an adaptive
+penalty sequence changes `ρ` with no operator rebuild and nothing to write back — which is what
+the previous `if rho_changed … rebuild …` branch got wrong (it never stored the rebuilt
+operator, so once `ρ` stabilised CG silently reverted to the initial `ρ`).
+
+`tmp` is one x-shaped scratch buffer for accumulating the `BᵢᴴBᵢ` contributions.
+"""
+struct ADMMNormalOp{TAHA, TBHB <: Tuple, TR, TT}
+	AᴴA::TAHA
+	BᴴB::TBHB
+	rho::TR
+	tmp::TT
+	sz::Tuple{Int, Int}
+end
+
+function LinearAlgebra.mul!(y, op::ADMMNormalOp, x)
+	if isnothing(op.AᴴA)
+		fill!(y, zero(eltype(y)))
+	else
+		mul!(y, op.AᴴA, x)
 	end
-	return cg_operator
+	for i in eachindex(op.BᴴB)
+		mul!(op.tmp, op.BᴴB[i], x)
+		@. y += op.rho[i] * op.tmp
+	end
+	return y
+end
+
+Base.size(op::ADMMNormalOp) = op.sz
+Base.size(op::ADMMNormalOp, i::Integer) = op.sz[i]
+Base.eltype(op::ADMMNormalOp) = eltype(op.tmp)
+Base.:*(op::ADMMNormalOp, x) = mul!(similar(op.tmp), op, x)
+
+function get_cg_operator(iter)
+	# x-update system: AᴴA + ∑ᵢ ρᵢ BᵢᴴBᵢ. Built once; ρ is followed live. See `ADMMNormalOp`.
+	AᴴA = isnothing(iter.A) ? nothing : iter.A' * iter.A
+	BᴴB = ntuple(i -> iter.B[i]' * iter.B[i], length(iter.g))
+	n = length(iter.x0)
+	return ADMMNormalOp(AᴴA, BᴴB, iter.penalty_sequence.rho, similar(iter.x0), (n, n))
 end
 
 function ADMMState(iter::ADMMIteration{R,Tx}) where {R,Tx}
@@ -326,8 +362,10 @@ formulas.
 The function returns the updated state, allowing the ADMM algorithm to proceed iteratively until convergence.
 """
 function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
-	# Get current rho values
-	rho, rho_changed = get_next_rho!(iter.penalty_sequence, iter, state)
+	# Get current rho values. `rho` aliases `iter.penalty_sequence.rho` and is mutated in place,
+	# so `state.cg_operator` (an `ADMMNormalOp` holding that same vector) always sees the current
+	# weights — nothing to rebuild.
+	rho, _ = get_next_rho!(iter.penalty_sequence, iter, state)
 
 	# Swap z and z_old at start of iteration
 	state.z, state.z_old = state.z_old, state.z
@@ -340,27 +378,28 @@ function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 	else
 		fill!(rhs, 0)
 	end
-	Threads.@threads for i in eachindex(iter.g)
-		temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
-		temp .= state.z_old[i] .- state.u[i]
-		mul!(state.tempˣ[i], adjoint(iter.B[i]), temp)
+	if length(iter.g) > 1 && iter.threaded
+		Threads.@threads for i in eachindex(iter.g)
+			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
+			temp .= state.z_old[i] .- state.u[i]
+			mul!(state.tempˣ[i], adjoint(iter.B[i]), temp)
+		end
+	else
+		for i in eachindex(iter.g)
+			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
+			temp .= state.z_old[i] .- state.u[i]
+			mul!(state.tempˣ[i], adjoint(iter.B[i]), temp)
+		end
 	end
 	for i in eachindex(iter.g)
 		rhs .+= rho[i] .* state.tempˣ[i]
 	end
 
-	# The CG operator is defined as:
-	# AᴴA + ∑ᵢ ρᵢ BᵢᴴBᵢ
-	# For adaptive penalty sequences, we need to reconstruct the operator with new rho values
-	if rho_changed
-		new_terms = sum(rho[i] * (iter.B[i]' * iter.B[i]) for i in eachindex(iter.g))
-		cg_operator = isnothing(iter.A) ? new_terms : (iter.A' * iter.A) + new_terms
-	else
-		cg_operator = state.cg_operator
-	end
+	# The CG operator AᴴA + ∑ᵢ ρᵢ BᵢᴴBᵢ follows ρ live (see `ADMMNormalOp`), so it is built once
+	# in `ADMMState` and never rebuilt here, even under an adaptive penalty sequence.
 	cg_solver = CG(;
 		x0=state.x,
-		A=cg_operator,
+		A=state.cg_operator,
 		b=rhs,
 		P=iter.P,
 		P_is_inverse=iter.P_is_inverse,
@@ -374,32 +413,62 @@ function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 	state.tempˣ[1] .= state.x .- x_old # Compute the change in x
 	state.Δx_norm = norm(state.tempˣ[1]) # Store the norm of the change in x
 
-	Threads.@threads for i in eachindex(iter.g)
-		# 2. Prox-step (z-update): zᵢ ← prox_{gᵢ, 1/ρᵢ}(Bᵢ⋅x + 1/ρᵢ⋅yᵢ)
-		mul!(state.Bx[i], iter.B[i], state.x)
-		temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
-		temp .= state.Bx[i] .+ state.u[i] # remember that u[i] = 1/ρᵢ * yᵢ, so we can skip the division
-		prox!(state.z[i], iter.g[i], temp, 1/rho[i])
+	if length(iter.g) > 1 && iter.threaded
+		Threads.@threads for i in eachindex(iter.g)
+			# 2. Prox-step (z-update): zᵢ ← prox_{gᵢ, 1/ρᵢ}(Bᵢ⋅x + 1/ρᵢ⋅yᵢ)
+			mul!(state.Bx[i], iter.B[i], state.x)
+			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
+			temp .= state.Bx[i] .+ state.u[i] # remember that u[i] = 1/ρᵢ * yᵢ, so we can skip the division
+			prox!(state.z[i], iter.g[i], temp, 1/rho[i])
 
-		# 3. Dual-step (y-update): yᵢ ← yᵢ + ρᵢ⋅(Bᵢ⋅xᵢ - zᵢ)
-		state.rᵏ[i] .= state.Bx[i] .- state.z[i] # Bᵢ * x - zᵢ -> this is the primal residual
-		state.u[i] .+= state.rᵏ[i] # again, we can skip the multiplication by ρᵢ
+			# 3. Dual-step (y-update): yᵢ ← yᵢ + ρᵢ⋅(Bᵢ⋅xᵢ - zᵢ)
+			state.rᵏ[i] .= state.Bx[i] .- state.z[i] # Bᵢ * x - zᵢ -> this is the primal residual
+			state.u[i] .+= state.rᵏ[i] # again, we can skip the multiplication by ρᵢ
 
-		# compute normalized residuals
-		# Raw primal residual: rᵏ = Bᵢ * x - zᵢ₊₁
-		# Normalization factor: ϵᵖʳⁱ = max{norm(Bᵢ * x), norm(zᵢ₊₁))
-		# Normalized primal residual: rᵏ_norm[i] = norm(rᵏ) / ϵᵖʳⁱ
-		state.rᵏ_norm[i] = norm(state.rᵏ[i]) # We already computed the primal residual in the previous step
-		state.ϵᵖʳⁱ[i] = max(norm(state.Bx[i]), norm(state.z[i]))
+			# compute normalized residuals
+			# Raw primal residual: rᵏ = Bᵢ * x - zᵢ₊₁
+			# Normalization factor: ϵᵖʳⁱ = max{norm(Bᵢ * x), norm(zᵢ₊₁))
+			# Normalized primal residual: rᵏ_norm[i] = norm(rᵏ) / ϵᵖʳⁱ
+			state.rᵏ_norm[i] = norm(state.rᵏ[i]) # We already computed the primal residual in the previous step
+			state.ϵᵖʳⁱ[i] = max(norm(state.Bx[i]), norm(state.z[i]))
 
-		# Raw dual residual: sᵏ = ρ * Bᵢᴴ * (zᵢ₊₁ - zᵢ)
-		# Normalization factor: ϵᵈᵘᵃˡ = ρ * norm(yᵢ₊₁)
-		# Normalized dual residual: sᵏ_norm[i] = norm(sᵏ) / ϵᵈᵘᵃ
-		Δz = state.Bx[i]  # we don't need Bx anymore, so we can reuse it to store Δz
-		Δz .= state.z[i] .- state.z_old[i]
-		mul!(state.sᵏ[i], iter.B[i]', Δz) # by definition, we should multiply by ρᵢ, but it is cheaper to multiple the norms later
-		state.sᵏ_norm[i] = rho[i] * norm(state.sᵏ[i])
-		state.ϵᵈᵘᵃ[i] = rho[i] * norm(state.u[i])
+			# Raw dual residual: sᵏ = ρ * Bᵢᴴ * (zᵢ₊₁ - zᵢ)
+			# Normalization factor: ϵᵈᵘᵃˡ = ρ * norm(yᵢ₊₁)
+			# Normalized dual residual: sᵏ_norm[i] = norm(sᵏ) / ϵᵈᵘᵃ
+			Δz = state.Bx[i]  # we don't need Bx anymore, so we can reuse it to store Δz
+			Δz .= state.z[i] .- state.z_old[i]
+			mul!(state.sᵏ[i], iter.B[i]', Δz) # by definition, we should multiply by ρᵢ, but it is cheaper to multiple the norms later
+			state.sᵏ_norm[i] = rho[i] * norm(state.sᵏ[i])
+			state.ϵᵈᵘᵃ[i] = rho[i] * norm(state.u[i])
+		end
+	else
+		for i in eachindex(iter.g)
+			# 2. Prox-step (z-update): zᵢ ← prox_{gᵢ, 1/ρᵢ}(Bᵢ⋅x + 1/ρᵢ⋅yᵢ)
+			mul!(state.Bx[i], iter.B[i], state.x)
+			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
+			temp .= state.Bx[i] .+ state.u[i] # remember that u[i] = 1/ρᵢ * yᵢ, so we can skip the division
+			prox!(state.z[i], iter.g[i], temp, 1/rho[i])
+
+			# 3. Dual-step (y-update): yᵢ ← yᵢ + ρᵢ⋅(Bᵢ⋅xᵢ - zᵢ)
+			state.rᵏ[i] .= state.Bx[i] .- state.z[i] # Bᵢ * x - zᵢ -> this is the primal residual
+			state.u[i] .+= state.rᵏ[i] # again, we can skip the multiplication by ρᵢ
+
+			# compute normalized residuals
+			# Raw primal residual: rᵏ = Bᵢ * x - zᵢ₊₁
+			# Normalization factor: ϵᵖʳⁱ = max{norm(Bᵢ * x), norm(zᵢ₊₁))
+			# Normalized primal residual: rᵏ_norm[i] = norm(rᵏ) / ϵᵖʳⁱ
+			state.rᵏ_norm[i] = norm(state.rᵏ[i]) # We already computed the primal residual in the previous step
+			state.ϵᵖʳⁱ[i] = max(norm(state.Bx[i]), norm(state.z[i]))
+
+			# Raw dual residual: sᵏ = ρ * Bᵢᴴ * (zᵢ₊₁ - zᵢ)
+			# Normalization factor: ϵᵈᵘᵃˡ = ρ * norm(yᵢ₊₁)
+			# Normalized dual residual: sᵏ_norm[i] = norm(sᵏ) / ϵᵈᵘᵃ
+			Δz = state.Bx[i]  # we don't need Bx anymore, so we can reuse it to store Δz
+			Δz .= state.z[i] .- state.z_old[i]
+			mul!(state.sᵏ[i], iter.B[i]', Δz) # by definition, we should multiply by ρᵢ, but it is cheaper to multiple the norms later
+			state.sᵏ_norm[i] = rho[i] * norm(state.sᵏ[i])
+			state.ϵᵈᵘᵃ[i] = rho[i] * norm(state.u[i])
+		end
 	end
 
 	return state, state
