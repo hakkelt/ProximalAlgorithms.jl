@@ -4,6 +4,9 @@
 # Beck, Teboulle, "A Fast Iterative Shrinkage-Thresholding Algorithm
 # for Linear Inverse Problems", SIAM Journal on Imaging Sciences, vol. 2,
 # no. 1, pp. 183-202 (2009).
+#
+# Kim, Fessler, "Adaptive Restart of the Optimized Gradient Method for
+# Convex Optimization", J. Optim. Theory Appl. (2018) (POGM, without restart).
 
 """
     FastForwardBackwardIteration(; <keyword-arguments>)
@@ -16,7 +19,7 @@ This iterator solves convex optimization problems of the form
 
 where `f` is smooth.
 
-See also: [`FastForwardBackward`](@ref).
+See also: [`FastForwardBackward`](@ref), [`POGM`](@ref).
 
 # Arguments
 - `x0`: initial point.
@@ -25,15 +28,17 @@ See also: [`FastForwardBackward`](@ref).
 - `mf=0`: convexity modulus of `f`.
 - `Lf=nothing`: Lipschitz constant of the gradient of `f`.
 - `gamma=nothing`: stepsize, defaults to `1/Lf` if `Lf` is set, and `nothing` otherwise.
-- `adaptive=true`: makes `gamma` adaptively adjust during the iterations; this is by default `gamma === nothing`.
+- `adaptive=true`: makes `gamma` adaptively adjust during the iterations; this is by default `gamma === nothing`. Not supported when `pogm=true`.
 - `minimum_gamma=1e-7`: lower bound to `gamma` in case `adaptive == true`.
 - `reduce_gamma=0.5`: factor by which to reduce `gamma` in case `adaptive == true`, during backtracking.
 - `increase_gamma=1.0`: factor by which to increase `gamma` in case `adaptive == true`, before backtracking.
-- `extrapolation_sequence=nothing`: sequence (iterator) of extrapolation coefficients to use for acceleration.
+- `extrapolation_sequence=nothing`: sequence (iterator) of extrapolation coefficients to use for acceleration. Must be left as `nothing` when `pogm=true`.
+- `pogm=false`: use the momentum update of the proximal optimized gradient method (POGM) [3] instead of the standard (FISTA-type) one; see [`POGM`](@ref). Requires `mf == 0` and `extrapolation_sequence === nothing`; the `adaptive` stepsize backtracking is ignored in this case.
 
 # References
 1. Tseng, "On Accelerated Proximal Gradient Methods for Convex-Concave Optimization" (2008).
 2. Beck, Teboulle, "A Fast Iterative Shrinkage-Thresholding Algorithm for Linear Inverse Problems", SIAM Journal on Imaging Sciences, vol. 2, no. 1, pp. 183-202 (2009).
+3. Kim, Fessler, "Adaptive Restart of the Optimized Gradient Method for Convex Optimization", Journal of Optimization Theory and Applications (2018).
 """
 Base.@kwdef struct FastForwardBackwardIteration{R,Tx,Tf,Tg,TLf,Tgamma,Textr}
     f::Tf = Zero()
@@ -47,6 +52,7 @@ Base.@kwdef struct FastForwardBackwardIteration{R,Tx,Tf,Tg,TLf,Tgamma,Textr}
     reduce_gamma::R = real(eltype(x0))(0.5)
     increase_gamma::R = real(eltype(x0))(1.0)
     extrapolation_sequence::Textr = nothing
+    pogm::Bool = false
 end
 
 Base.IteratorSize(::Type{<:FastForwardBackwardIteration}) = Base.IsInfinite()
@@ -62,31 +68,67 @@ Base.@kwdef mutable struct FastForwardBackwardState{R,Tx,Textr}
     res::Tx           # fixed-point residual at iterate (= z - x)
     z_prev::Tx = copy(x)
     extrapolation_sequence::Textr
+    theta::R = one(gamma)   # POGM only: extrapolation "theta" parameter
+    y_prev::Tx = copy(y)   # POGM only: forward point at the previous iteration
+    w_prev::Tx = copy(x)   # POGM only: pre-prox composite point at the previous iteration
+    zeta_prev::R = gamma   # POGM only: prox stepsize at the previous iteration
 end
 
 function Base.iterate(iter::FastForwardBackwardIteration)
+    if iter.pogm
+        iter.extrapolation_sequence === nothing ||
+            error("pogm=true does not support a custom extrapolation_sequence")
+        iszero(iter.mf) || error("pogm=true is currently only implemented for mf == 0")
+    end
     x = copy(iter.x0)
     y = similar(x)
     f_x, grad_f_x = value_and_gradient(iter.f, x)
     R = real(eltype(x))
     gamma = R(iter.gamma === nothing ? 1 / lower_bound_smoothness_constant(iter.f, I, x, grad_f_x) : iter.gamma)
     @. y = x - gamma .* grad_f_x
-    z, g_z = prox(iter.g, y, gamma)
-    state = FastForwardBackwardState(
-        x = x,
-        f_x = f_x,
-        grad_f_x = grad_f_x,
-        gamma = gamma,
-        y = y,
-        z = z,
-        g_z = g_z,
-        res = x - z,
-        extrapolation_sequence = if iter.extrapolation_sequence !== nothing
-            Iterators.Stateful(iter.extrapolation_sequence)
-        else
-            AdaptiveNesterovSequence(iter.mf)
-        end,
-    )
+    extrapolation_sequence = if iter.extrapolation_sequence !== nothing
+        Iterators.Stateful(iter.extrapolation_sequence)
+    else
+        AdaptiveNesterovSequence(iter.mf)
+    end
+    if iter.pogm
+        # First POGM update: theta_0 = 1, so beta = 0 and only the "eta" (OGM)
+        # momentum term is active; see [3] in the docstring above.
+        theta = R(1)
+        theta_new = (1 + sqrt(1 + 4 * theta^2)) / 2
+        eta = theta / theta_new
+        w = y .+ eta .* (y .- x)
+        zeta = gamma * (1 + eta)
+        z, g_z = prox(iter.g, w, zeta)
+        state = FastForwardBackwardState(
+            x = x,
+            f_x = f_x,
+            grad_f_x = grad_f_x,
+            gamma = gamma,
+            y = y,
+            z = z,
+            g_z = g_z,
+            res = x - z,
+            extrapolation_sequence = extrapolation_sequence,
+            theta = theta_new,
+            y_prev = copy(y),
+            w_prev = w,
+            zeta_prev = zeta,
+        )
+    else
+        z, g_z = prox(iter.g, y, gamma)
+        state = FastForwardBackwardState(
+            x = x,
+            f_x = f_x,
+            grad_f_x = grad_f_x,
+            gamma = gamma,
+            y = y,
+            z = z,
+            g_z = g_z,
+            res = x - z,
+            extrapolation_sequence = extrapolation_sequence,
+        )
+    end
     return state, state
 end
 
@@ -101,6 +143,35 @@ function Base.iterate(
     iter::FastForwardBackwardIteration{R},
     state::FastForwardBackwardState{R,Tx},
 ) where {R,Tx}
+    if iter.pogm
+        # Carry the previous prox output forward as the point where the
+        # gradient is evaluated: POGM has no separate momentum-on-x step,
+        # the momentum is folded directly into the pre-prox point below.
+        state.x .= state.z
+        state.f_x = value_and_gradient!(state.grad_f_x, iter.f, state.x)
+        state.y .= state.x .- state.gamma .* state.grad_f_x
+
+        theta_new = (1 + sqrt(1 + 4 * state.theta^2)) / 2
+        beta = (state.theta - 1) / theta_new
+        eta = state.theta / theta_new
+
+        # Pre-prox composite point; safe to update w_prev in place since the
+        # update is elementwise (see [3] in the docstring above).
+        coef = beta * state.gamma / state.zeta_prev
+        state.w_prev .=
+            state.y .+ beta .* (state.y .- state.y_prev) .+ eta .* (state.y .- state.x) .-
+            coef .* (state.x .- state.w_prev)
+        zeta = state.gamma * (1 + beta + eta)
+
+        state.y_prev .= state.y
+        state.g_z = prox!(state.z, iter.g, state.w_prev, zeta)
+        state.res .= state.x .- state.z
+        state.zeta_prev = zeta
+        state.theta = theta_new
+
+        return state, state
+    end
+
     state.gamma = if iter.adaptive == true
         state.gamma *= iter.increase_gamma
         gamma, state.g_z = backtrack_stepsize!(
@@ -144,7 +215,7 @@ default_stopping_criterion(
 ) = norm(state.res, Inf) / state.gamma <= tol
 default_solution(::FastForwardBackwardIteration, state::FastForwardBackwardState) = state.z
 default_iteration_summary(it, iter::FastForwardBackwardIteration, state::FastForwardBackwardState) = begin
-    if iter.adaptive
+    if iter.adaptive && !iter.pogm
         ("" => it, "f(x)" => state.f_x, "g(z)" => state.g_z, "γ" => state.gamma, "‖x - z‖/γ" => norm(state.res, Inf) / state.gamma)
     else
         ("" => it, "f(x)" => state.f_x, "g(z)" => state.g_z, "‖x - z‖/γ" => norm(state.res, Inf) / state.gamma)
@@ -213,3 +284,20 @@ get_assumptions(::Type{<:FastForwardBackwardIteration}) = AssumptionGroup(
 
 const FastProximalGradientIteration = FastForwardBackwardIteration
 const FastProximalGradient = FastForwardBackward
+
+"""
+    POGM(; <keyword-arguments>)
+
+Constructs the proximal optimized gradient method (POGM) [3].
+
+This is a shortcut for [`FastForwardBackward`](@ref) with `pogm=true`: it solves the
+same class of problems, using the same keyword arguments (except `pogm`, which should
+not be passed), but replaces the FISTA-type momentum update with the (asymptotically
+faster, by a factor 2) POGM one.
+
+See also: [`FastForwardBackward`](@ref), [`FastForwardBackwardIteration`](@ref).
+
+# References
+3. Kim, Fessler, "Adaptive Restart of the Optimized Gradient Method for Convex Optimization", Journal of Optimization Theory and Applications (2018).
+"""
+POGM(; kwargs...) = FastForwardBackward(; kwargs..., pogm = true)

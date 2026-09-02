@@ -281,6 +281,7 @@ get_algorithms() = [
     CG(),
     CGNR(),
     FastForwardBackward(),
+    POGM(),
     ZeroFPR(),
     PANOCplus(),
     DavisYin(),
