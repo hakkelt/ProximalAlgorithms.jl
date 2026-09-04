@@ -3,11 +3,15 @@
 # Inverse Problems," in IEEE Transactions on Image Processing, vol. 20, no. 3,
 # pp. 681-695, March 2011, doi: 10.1109/TIP.2010.2076294.
 
-struct ADMMIteration{R,Tx,TA,Tb,TAHb,Tg,TB,TP,Tyz,Tps}
+struct ADMMIteration{R,Tx,TA,Tb,TAHb,TAHA,Tg,TB,TP,Tyz,Tps}
 	x0::Tx
 	A::TA
 	b::Tb
 	AHb::TAHb
+	# An already-built `AᴴA`, or `nothing` to build it here. `StructuredOptimization`'s
+	# `SqrNormL2WithNormalOp` constructs one eagerly; without this field ADMM would build a
+	# second, independent `Compose` chain with its own operator-sized buffers.
+	AHA::TAHA
 	g::Tg
 	B::TB
 	P::TP
@@ -20,8 +24,12 @@ struct ADMMIteration{R,Tx,TA,Tb,TAHb,Tg,TB,TP,Tyz,Tps}
 	threaded::Bool
 end
 
+# Positional convenience constructor: no cached `AᴴA`, threading on.
 ADMMIteration(x0, A, b, AHb, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0, penalty_sequence) =
-	ADMMIteration(x0, A, b, AHb, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0, penalty_sequence, true)
+	ADMMIteration(
+		x0, A, b, AHb, nothing, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0,
+		penalty_sequence, true,
+	)
 
 """
 	ADMMIteration(; <keyword-arguments>)
@@ -43,6 +51,8 @@ See also: [`ADMM`](@ref).
 - `x0`: initial point
 - `A=nothing`: forward operator. If `A` is not provided, ½‖Ax - b‖²₂ is not computed, and the algorithm will only minimize the regularization terms.
 - `b=nothing`: measurement vector. If `A` is provided, `b` must also be provided.
+- `AHA=nothing`: the normal operator `AᴴA`, if the caller already holds one. Left `nothing`,
+  it is built from `A`; passing one that is not `A' * A` solves a different problem.
 - `g=()`: tuple of proximable regularization functions
 - `B=()`: tuple of regularization operators
 - `P=nothing`: preconditioner for CG (optional)
@@ -74,6 +84,7 @@ function ADMMIteration(;
 	x0,
 	A=nothing,
 	b=nothing,
+	AHA=nothing,
 	g=(),
 	B=nothing,
 	rho=nothing,
@@ -146,8 +157,12 @@ function ADMMIteration(;
 		reinstantiate_penalty_sequence(penalty_sequence, R, final_rho)
 	end
 
+	if !isnothing(AHA) && isnothing(A)
+		throw(ArgumentError("AHA was given without A"))
+	end
+
 	return ADMMIteration(
-		x0, A, b, AHb, g, B, P, P_is_inverse, R(cg_tol), cg_maxit, y0, z0, ps, threaded
+		x0, A, b, AHb, AHA, g, B, P, P_is_inverse, R(cg_tol), cg_maxit, y0, z0, ps, threaded
 	)
 end
 
@@ -268,7 +283,13 @@ Base.:*(op::ADMMNormalOp, x) = mul!(similar(op.tmp), op, x)
 
 function get_cg_operator(iter)
 	# x-update system: AᴴA + ∑ᵢ ρᵢ BᵢᴴBᵢ. Built once; ρ is followed live. See `ADMMNormalOp`.
-	AᴴA = isnothing(iter.A) ? nothing : iter.A' * iter.A
+	AᴴA = if isnothing(iter.A)
+		nothing
+	elseif isnothing(iter.AHA)
+		iter.A' * iter.A
+	else
+		iter.AHA
+	end
 	BᴴB = ntuple(i -> iter.B[i]' * iter.B[i], length(iter.g))
 	n = length(iter.x0)
 	return ADMMNormalOp(AᴴA, BᴴB, iter.penalty_sequence.rho, similar(iter.x0), (n, n))
@@ -564,7 +585,7 @@ end
 
 function get_assumptions(::Type{<:ADMMIteration})
 	AssumptionGroup(
-		LeastSquaresTerm(:A => (is_linear,), :b),
+		LeastSquaresTerm(:A => (is_linear,), :b, :AHA),
 		RepeatedOperatorTerm(:g => (is_proximable,), :B => (is_linear,)),
 	)
 end
