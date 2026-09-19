@@ -20,9 +20,6 @@ struct ADMMIteration{R,Tx,TA,Tb,TAHb,Tg,TB,TP,Tyz,Tps}
 	threaded::Bool
 end
 
-ADMMIteration(x0, A, b, AHb, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0, penalty_sequence) =
-	ADMMIteration(x0, A, b, AHb, g, B, P, P_is_inverse, cg_tol, cg_maxit, y0, z0, penalty_sequence, true)
-
 """
 	ADMMIteration(; <keyword-arguments>)
 
@@ -59,6 +56,11 @@ See also: [`ADMM`](@ref).
   - `SpectralRadiusBoundPenalty(rho; tau=10.0, eta=100.0)`: adaptive penalty sequence based on spectral radius bounds [3]
   - `SpectralRadiusApproximationPenalty(rho; tau=10.0)`: adaptive penalty sequence based on spectral radius approximation [4]
   Note: rho can be specified either as the `rho` parameter or within the penalty sequence constructor, but not both.
+- `threaded=true`: run the per-regularizer loops (the adjoint accumulation of the x-update and
+  the whole z/y-update) over `Threads.@threads`. Set it to `false` from a caller that is
+  already threading at a coarser level — nested threading regions oversubscribe rather than
+  speed anything up. With a single regularizer block there is nothing to spread and the loops
+  stay serial either way.
 
 The adaptive penalty parameter schemes are implemented through the penalty sequence types, 
 following various strategies from the literature. See the individual penalty sequence types 
@@ -361,6 +363,24 @@ formulas.
 
 The function returns the updated state, allowing the ADMM algorithm to proceed iteratively until convergence.
 """
+# Run `body(i)` for every regularizer block, threaded or not as `iter.threaded` says. Both
+# per-block loops of one ADMM iteration are independent across blocks, so either is safe to
+# thread; a caller that is already threading at a coarser level passes `threaded = false`,
+# since nested threading regions oversubscribe rather than speed anything up. A single block
+# never gets a threading scope, because there is nothing to spread.
+function foreach_block(body, iter)
+	if length(iter.g) > 1 && iter.threaded
+		Threads.@threads for i in eachindex(iter.g)
+			body(i)
+		end
+	else
+		for i in eachindex(iter.g)
+			body(i)
+		end
+	end
+	return nothing
+end
+
 function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 	# Get current rho values. `rho` aliases `iter.penalty_sequence.rho` and is mutated in place,
 	# so `state.cg_operator` (an `ADMMNormalOp` holding that same vector) always sees the current
@@ -378,18 +398,10 @@ function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 	else
 		fill!(rhs, 0)
 	end
-	if length(iter.g) > 1 && iter.threaded
-		Threads.@threads for i in eachindex(iter.g)
-			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
-			temp .= state.z_old[i] .- state.u[i]
-			mul!(state.tempˣ[i], adjoint(iter.B[i]), temp)
-		end
-	else
-		for i in eachindex(iter.g)
-			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
-			temp .= state.z_old[i] .- state.u[i]
-			mul!(state.tempˣ[i], adjoint(iter.B[i]), temp)
-		end
+	foreach_block(iter) do i
+		temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
+		temp .= state.z_old[i] .- state.u[i]
+		mul!(state.tempˣ[i], adjoint(iter.B[i]), temp)
 	end
 	for i in eachindex(iter.g)
 		rhs .+= rho[i] .* state.tempˣ[i]
@@ -413,62 +425,32 @@ function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 	state.tempˣ[1] .= state.x .- x_old # Compute the change in x
 	state.Δx_norm = norm(state.tempˣ[1]) # Store the norm of the change in x
 
-	if length(iter.g) > 1 && iter.threaded
-		Threads.@threads for i in eachindex(iter.g)
-			# 2. Prox-step (z-update): zᵢ ← prox_{gᵢ, 1/ρᵢ}(Bᵢ⋅x + 1/ρᵢ⋅yᵢ)
-			mul!(state.Bx[i], iter.B[i], state.x)
-			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
-			temp .= state.Bx[i] .+ state.u[i] # remember that u[i] = 1/ρᵢ * yᵢ, so we can skip the division
-			prox!(state.z[i], iter.g[i], temp, 1/rho[i])
+	foreach_block(iter) do i
+		# 2. Prox-step (z-update): zᵢ ← prox_{gᵢ, 1/ρᵢ}(Bᵢ⋅x + 1/ρᵢ⋅yᵢ)
+		mul!(state.Bx[i], iter.B[i], state.x)
+		temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
+		temp .= state.Bx[i] .+ state.u[i] # remember that u[i] = 1/ρᵢ * yᵢ, so we can skip the division
+		prox!(state.z[i], iter.g[i], temp, 1/rho[i])
 
-			# 3. Dual-step (y-update): yᵢ ← yᵢ + ρᵢ⋅(Bᵢ⋅xᵢ - zᵢ)
-			state.rᵏ[i] .= state.Bx[i] .- state.z[i] # Bᵢ * x - zᵢ -> this is the primal residual
-			state.u[i] .+= state.rᵏ[i] # again, we can skip the multiplication by ρᵢ
+		# 3. Dual-step (y-update): yᵢ ← yᵢ + ρᵢ⋅(Bᵢ⋅xᵢ - zᵢ)
+		state.rᵏ[i] .= state.Bx[i] .- state.z[i] # Bᵢ * x - zᵢ -> this is the primal residual
+		state.u[i] .+= state.rᵏ[i] # again, we can skip the multiplication by ρᵢ
 
-			# compute normalized residuals
-			# Raw primal residual: rᵏ = Bᵢ * x - zᵢ₊₁
-			# Normalization factor: ϵᵖʳⁱ = max{norm(Bᵢ * x), norm(zᵢ₊₁))
-			# Normalized primal residual: rᵏ_norm[i] = norm(rᵏ) / ϵᵖʳⁱ
-			state.rᵏ_norm[i] = norm(state.rᵏ[i]) # We already computed the primal residual in the previous step
-			state.ϵᵖʳⁱ[i] = max(norm(state.Bx[i]), norm(state.z[i]))
+		# compute normalized residuals
+		# Raw primal residual: rᵏ = Bᵢ * x - zᵢ₊₁
+		# Normalization factor: ϵᵖʳⁱ = max{norm(Bᵢ * x), norm(zᵢ₊₁))
+		# Normalized primal residual: rᵏ_norm[i] = norm(rᵏ) / ϵᵖʳⁱ
+		state.rᵏ_norm[i] = norm(state.rᵏ[i]) # We already computed the primal residual in the previous step
+		state.ϵᵖʳⁱ[i] = max(norm(state.Bx[i]), norm(state.z[i]))
 
-			# Raw dual residual: sᵏ = ρ * Bᵢᴴ * (zᵢ₊₁ - zᵢ)
-			# Normalization factor: ϵᵈᵘᵃˡ = ρ * norm(yᵢ₊₁)
-			# Normalized dual residual: sᵏ_norm[i] = norm(sᵏ) / ϵᵈᵘᵃ
-			Δz = state.Bx[i]  # we don't need Bx anymore, so we can reuse it to store Δz
-			Δz .= state.z[i] .- state.z_old[i]
-			mul!(state.sᵏ[i], iter.B[i]', Δz) # by definition, we should multiply by ρᵢ, but it is cheaper to multiple the norms later
-			state.sᵏ_norm[i] = rho[i] * norm(state.sᵏ[i])
-			state.ϵᵈᵘᵃ[i] = rho[i] * norm(state.u[i])
-		end
-	else
-		for i in eachindex(iter.g)
-			# 2. Prox-step (z-update): zᵢ ← prox_{gᵢ, 1/ρᵢ}(Bᵢ⋅x + 1/ρᵢ⋅yᵢ)
-			mul!(state.Bx[i], iter.B[i], state.x)
-			temp = state.rᵏ[i] # reusing array of previous iteration's rᵏ as a temporary variable
-			temp .= state.Bx[i] .+ state.u[i] # remember that u[i] = 1/ρᵢ * yᵢ, so we can skip the division
-			prox!(state.z[i], iter.g[i], temp, 1/rho[i])
-
-			# 3. Dual-step (y-update): yᵢ ← yᵢ + ρᵢ⋅(Bᵢ⋅xᵢ - zᵢ)
-			state.rᵏ[i] .= state.Bx[i] .- state.z[i] # Bᵢ * x - zᵢ -> this is the primal residual
-			state.u[i] .+= state.rᵏ[i] # again, we can skip the multiplication by ρᵢ
-
-			# compute normalized residuals
-			# Raw primal residual: rᵏ = Bᵢ * x - zᵢ₊₁
-			# Normalization factor: ϵᵖʳⁱ = max{norm(Bᵢ * x), norm(zᵢ₊₁))
-			# Normalized primal residual: rᵏ_norm[i] = norm(rᵏ) / ϵᵖʳⁱ
-			state.rᵏ_norm[i] = norm(state.rᵏ[i]) # We already computed the primal residual in the previous step
-			state.ϵᵖʳⁱ[i] = max(norm(state.Bx[i]), norm(state.z[i]))
-
-			# Raw dual residual: sᵏ = ρ * Bᵢᴴ * (zᵢ₊₁ - zᵢ)
-			# Normalization factor: ϵᵈᵘᵃˡ = ρ * norm(yᵢ₊₁)
-			# Normalized dual residual: sᵏ_norm[i] = norm(sᵏ) / ϵᵈᵘᵃ
-			Δz = state.Bx[i]  # we don't need Bx anymore, so we can reuse it to store Δz
-			Δz .= state.z[i] .- state.z_old[i]
-			mul!(state.sᵏ[i], iter.B[i]', Δz) # by definition, we should multiply by ρᵢ, but it is cheaper to multiple the norms later
-			state.sᵏ_norm[i] = rho[i] * norm(state.sᵏ[i])
-			state.ϵᵈᵘᵃ[i] = rho[i] * norm(state.u[i])
-		end
+		# Raw dual residual: sᵏ = ρ * Bᵢᴴ * (zᵢ₊₁ - zᵢ)
+		# Normalization factor: ϵᵈᵘᵃˡ = ρ * norm(yᵢ₊₁)
+		# Normalized dual residual: sᵏ_norm[i] = norm(sᵏ) / ϵᵈᵘᵃ
+		Δz = state.Bx[i]  # we don't need Bx anymore, so we can reuse it to store Δz
+		Δz .= state.z[i] .- state.z_old[i]
+		mul!(state.sᵏ[i], iter.B[i]', Δz) # by definition, we should multiply by ρᵢ, but it is cheaper to multiple the norms later
+		state.sᵏ_norm[i] = rho[i] * norm(state.sᵏ[i])
+		state.ϵᵈᵘᵃ[i] = rho[i] * norm(state.u[i])
 	end
 
 	return state, state
