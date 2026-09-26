@@ -119,4 +119,44 @@ using Random
         x, _ = ProximalAlgorithms.CGNR(x0 = x0, A = A, b = b, P = Diagonal(ones(n)), maxit = 500)()
         @test norm(x - expected) / norm(expected) < 1.0e-6
     end
+
+    @testset "Level-1 BLAS grant" begin
+        NT = ProximalAlgorithms.NestedThreading
+        PA = ProximalAlgorithms
+        n = 100
+        A = rand(n, n)
+        A = A'A + I
+        b = rand(n)
+        x0 = zeros(n)
+        reference, _ = PA.CG(x0 = x0, A = A, b = b)()
+
+        blas = BLAS.get_num_threads()
+        old = PA.CG_BLAS_THREAD_BYTES[]
+        try
+            # Defaults: nothing this small is granted, non-BLAS storage never is, and a large
+            # iterate only on MKL.
+            @test !PA._grants_level1(x0)
+            @test !PA._grants_level1(zeros(BigFloat, 2^21))
+            mkl = any(lib -> occursin("mkl", lib.libname), BLAS.get_config().loaded_libs)
+            @test PA._grants_level1(zeros(2^21)) == mkl
+            PA.CG_BLAS_THREAD_BYTES[] = sizeof(x0)
+            @test PA._grants_level1(x0)
+            @test !PA._grants_level1(zeros(n - 1))
+
+            # The grant restores BLAS's own count inside a serial default, and the solve,
+            # with and without a preconditioner, computes the same thing through it.
+            NT.with_thread_default(1; only = (:blas,)) do
+                observed = PA._with_level1_threads(BLAS.get_num_threads, x0)
+                @test observed == blas
+                x, _ = PA.CG(x0 = x0, A = A, b = b)()
+                @test x ≈ reference
+                x, _ = PA.CG(x0 = x0, A = A, b = b, P = Diagonal(diag(A)))()
+                @test norm(A * x - b) < 1e-6
+                @test BLAS.get_num_threads() == 1
+            end
+            @test BLAS.get_num_threads() == blas
+        finally
+            PA.CG_BLAS_THREAD_BYTES[] = old
+        end
+    end
 end
