@@ -32,3 +32,7 @@ end
     include("problems/test_nonconvex_qp.jl")
     include("problems/test_verbose.jl")
 end
+
+@testset "GPU" begin
+    include("test_gpu.jl")
+end

@@ -18,3 +18,4 @@ Manifest.toml
 docs/Manifest.toml
 benchmark/Manifest.toml
 benchmark/*.json
+gpu_env/
