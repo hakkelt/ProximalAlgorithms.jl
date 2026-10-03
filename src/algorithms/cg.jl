@@ -301,32 +301,73 @@ function Base.iterate(iter::AbstractPCGIteration)
 	return state, state
 end
 
+"""
+	CG_BLAS_THREAD_BYTES
+
+Size in bytes of the iterate from which a CG step runs its vector updates (`dot`, `axpy!`)
+under a BLAS grant (`NestedThreading.with_thread_grant`), restoring BLAS's threads when a
+caller runs the solve at serial BLAS by default (`NestedThreading.with_thread_default`). A
+`Ref{Int}`: `0` picks by backend, `typemax(Int)` never asks.
+
+Level-1 BLAS is memory-bound, so threading it pays only for large vectors: measured on an
+AMD EPYC 7352 at 8 threads, serial over threaded was 0.76–1.38x at 8 MiB, 1.13–1.35x at
+16 MiB and 1.66x at 64 MiB. That is in isolation. Inside a solve, only MKL keeps the gain,
+from about 8 MiB, which is its default. OpenBLAS's workers either spin after each update, taking
+cores from the operator that runs next, or are parked and re-created on every step. A 16 MiB
+CG iterate granted at every step made a whole solve 1.5x slower (AMD EPYC 7763, 8 threads), so
+OpenBLAS is never granted by default. Only the vector updates are granted, never
+`mul!(Ap, A, p)`: the operator may run on Julia's own threads, which idle BLAS workers would
+compete with.
+"""
+const CG_BLAS_THREAD_BYTES = Ref(0)
+
+const _MIB = 2^20
+
+# Whether a CG step on `x` should run its vector updates under a BLAS grant. The backend is
+# looked up only for an iterate that could pass either default, so small solves never pay.
+function _grants_level1(x)
+	x isa DenseArray{<:LinearAlgebra.BlasFloat} || return false
+	bytes = CG_BLAS_THREAD_BYTES[]
+	bytes > 0 && return sizeof(x) >= bytes
+	sizeof(x) < 8 * _MIB && return false
+	return any(lib -> occursin("mkl", lib.libname), BLAS.get_config().loaded_libs)
+end
+
+# Run `f()`, a CG step's vector updates, under a BLAS grant when the iterate is large enough
+# for threaded level-1 BLAS to pay; the size is checked before any scope opens.
+function _with_level1_threads(f::F, x) where {F}
+	_grants_level1(x) || return f()
+	return NestedThreading.with_thread_grant(f, typemax(Int); only = (:blas, :mkl))
+end
+
 function Base.iterate(iter::AbstractCGIteration, state::CGState)
 	# Ap = A*p
 	mul!(state.Ap, iter.A, state.p) # compute A*p
 
-	# Add regularization term if λ > 0
-	if iter.λ > 0
-		@. state.Ap += iter.λ * state.p # add regularization term λp
+	_with_level1_threads(state.x) do
+		# Add regularization term if λ > 0
+		if iter.λ > 0
+			@. state.Ap += iter.λ * state.p # add regularization term λp
+		end
+
+		# α = (r'r)/(p'Ap)
+		pAp = real(dot(vec(state.p), vec(state.Ap))) # compute p'Ap
+		state.α = state.r² / pAp # compute step size α
+
+		# x = x + αp
+		axpy!(state.α, state.p, state.x) # update solution x
+
+		# r = r - αAp
+		axpy!(-state.α, state.Ap, state.r) # update residual r
+
+		# β = (r'r)/(r_old'r_old)
+		r²_new = real(dot(vec(state.r), vec(state.r))) # compute new squared norm of residual
+		state.β = r²_new / state.r² # compute conjugate direction parameter β
+		state.r² = r²_new # update squared norm of residual
+
+		# p = r + βp
+		@. state.p = state.r + state.β * state.p # update search direction p
 	end
-
-	# α = (r'r)/(p'Ap)
-	pAp = real(dot(vec(state.p), vec(state.Ap))) # compute p'Ap
-	state.α = state.r² / pAp # compute step size α
-
-	# x = x + αp
-	axpy!(state.α, state.p, state.x) # update solution x
-
-	# r = r - αAp
-	axpy!(-state.α, state.Ap, state.r) # update residual r
-
-	# β = (r'r)/(r_old'r_old)
-	r²_new = real(dot(vec(state.r), vec(state.r))) # compute new squared norm of residual
-	state.β = r²_new / state.r² # compute conjugate direction parameter β
-	state.r² = r²_new # update squared norm of residual
-
-	# p = r + βp
-	@. state.p = state.r + state.β * state.p # update search direction p
 
 	return state, state
 end
@@ -337,11 +378,13 @@ function Base.iterate(iter::AbstractPCGIteration, state::PCGState)
 		@. state.Ap += iter.λ * state.p # add regularization term λp
 	end
 
-	pAp = real(dot(vec(state.p), vec(state.Ap)))
-	state.α = state.rz / pAp # α = (r'z)/(p'Ap)
+	_with_level1_threads(state.x) do
+		pAp = real(dot(vec(state.p), vec(state.Ap)))
+		state.α = state.rz / pAp # α = (r'z)/(p'Ap)
 
-	axpy!(state.α, state.p, state.x) # x = x + αp
-	axpy!(-state.α, state.Ap, state.r) # r = r - αAp
+		axpy!(state.α, state.p, state.x) # x = x + αp
+		axpy!(-state.α, state.Ap, state.r) # r = r - αAp
+	end
 
 	# z = P\r or z = P*r depending on P_is_inverse
 	if iter.P_is_inverse
