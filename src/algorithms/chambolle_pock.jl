@@ -34,7 +34,7 @@ See also: [`ChambollePock`](@ref).
 - `g=Zero()`: proximable objective term.
 - `h=Zero()`: proximable objective term, composed with `L`.
 - `L=I`: linear operator (e.g. a matrix).
-- `normL=nothing`: the operator norm `‖L‖`, computed with `opnorm(L)` when `nothing`.
+- `normL=opnorm(L)`: the operator norm `‖L‖`.
 - `ratio=1`: the ratio `σ/τ` of the dual and primal step sizes of the default step sizes.
 - `tau`, `sigma`: primal and dual step sizes; by default `τ = 0.99/(‖L‖√ratio)` and
   `σ = 0.99√ratio/‖L‖`, so that `τσ‖L‖² < 1`.
@@ -81,11 +81,14 @@ function ChambollePockState(iter::ChambollePockIteration)
 end
 
 function Base.iterate(iter::ChambollePockIteration, state::ChambollePockState = ChambollePockState(iter))
-    # dual step, from the extrapolated primal point
+    # dual step, from the extrapolated primal point, through Moreau's identity
+    # prox[σh*](v) = σ (v/σ - prox[h/σ](v/σ)): the prox of `h` itself keeps a separable `h`
+    # separable, where its conjugate's prox would go through the generic, allocating path
     mul!(state.temp_y, iter.L, state.xbar)
-    state.temp_y .= state.y .+ iter.sigma .* state.temp_y
+    state.temp_y .= state.y ./ iter.sigma .+ state.temp_y
     state.y, state.y_prev = state.y_prev, state.y
-    prox!(state.y, convex_conjugate(iter.h), state.temp_y, iter.sigma)
+    prox!(state.y, iter.h, state.temp_y, inv(iter.sigma))
+    state.y .= iter.sigma .* (state.temp_y .- state.y)
 
     # primal step
     mul!(state.temp_x, iter.Lt, state.y)
