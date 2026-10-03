@@ -269,6 +269,7 @@ include("algorithms/davis_yin.jl")
 include("algorithms/li_lin.jl")
 include("algorithms/sfista.jl")
 include("algorithms/panocplus.jl")
+include("algorithms/smooth_descent.jl")
 
 include("penalty_sequences/penalty_sequence_base.jl")
 include("penalty_sequences/fixed_penalty.jl")
@@ -295,6 +296,8 @@ get_algorithms() = [
     LiLin(),
     PANOC(),
     ForwardBackward(),
+    LimitedMemoryBFGS(),
+    NonlinearCG(),
 ]
 
 end # module
