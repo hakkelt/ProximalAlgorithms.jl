@@ -114,6 +114,8 @@ The CGNR algorithm applies the CG method to the normal equations:
 - `x0`: initial point
 - `A`: linear operator
 - `b`: measurement vector
+- `AHA=nothing`: the normal operator `AᴴA`, if the caller already holds one. Left `nothing`,
+  it is built from `A`; passing one that is not `A' * A` solves a different problem.
 - `λ=0`: L2 regularization parameter (default: 0)
 
 # References
@@ -131,9 +133,9 @@ struct CGNRIteration{Tx,TA,Tb,R} <: AbstractCGIteration
 end
 
 function CGNRIteration(;
-	x0::Tx, A::TA, b::Tb, λ::R=0, state::CGState=CGState(x0, x0)
+	x0::Tx, A::TA, b::Tb, AHA=nothing, λ::R=0, state::CGState=CGState(x0, x0)
 ) where {Tx,TA,Tb,R}
-	AᴴA = A' * A
+	AᴴA = isnothing(AHA) ? A' * A : AHA
 	return CGNRIteration{Tx,typeof(AᴴA),Tx,real(eltype(x0))}(x0, AᴴA, A' * b, λ, state)
 end
 
@@ -204,6 +206,8 @@ A preconditioner `P` is used to accelerate convergence.
 - `x0`: initial point
 - `A`: linear operator
 - `b`: measurement vector
+- `AHA=nothing`: the normal operator `AᴴA`, if the caller already holds one. Left `nothing`,
+  it is built from `A`; passing one that is not `A' * A` solves a different problem.
 - `λ=0`: L2 regularization parameter (default: 0)
 - `P`: preconditioner (optional)
 - `P_is_inverse`: whether `P` is the inverse of the preconditioner (default: `false`)
@@ -225,9 +229,10 @@ struct PCGNRIteration{Tx,TA,Tb,TP,R} <: AbstractPCGIteration
 end
 
 function PCGNRIteration(;
-	x0::Tx, A::TA, b::Tb, P::TP, P_is_inverse=false, λ::R=0, state::PCGState=PCGState(x0, x0)
-) where {Tx,TA,Tb,TP,R}
-	return PCGNRIteration{Tx,TA,Tb,TP,real(eltype(x0))}(x0, A' * A, A' * b, P, P_is_inverse, λ, state)
+	x0::Tx, A, b::Tb, AHA=nothing, P::TP, P_is_inverse=false, λ::R=0, state::PCGState=PCGState(x0, x0)
+) where {Tx,Tb,TP,R}
+	AᴴA = isnothing(AHA) ? A' * A : AHA
+	return PCGNRIteration{Tx,typeof(AᴴA),Tx,TP,real(eltype(x0))}(x0, AᴴA, A' * b, P, P_is_inverse, λ, state)
 end
 
 function Base.iterate(iter::AbstractCGIteration)
@@ -472,10 +477,10 @@ function get_assumptions(::Type{<:AbstractCGIteration})
 	return AssumptionGroup(SquaredL2Term(:λ), LeastSquaresTerm(:A => (is_linear, is_square), :b))
 end
 function get_assumptions(::Type{<:CGNRIteration})
-	return AssumptionGroup(SquaredL2Term(:λ), LeastSquaresTerm(:A => (is_linear,), :b))
+	return AssumptionGroup(SquaredL2Term(:λ), LeastSquaresTerm(:A => (is_linear,), :b, :AHA))
 end
 function get_assumptions(::Type{<:PCGNRIteration})
-	return AssumptionGroup(SquaredL2Term(:λ), LeastSquaresTerm(:A => (is_linear,), :b))
+	return AssumptionGroup(SquaredL2Term(:λ), LeastSquaresTerm(:A => (is_linear,), :b, :AHA))
 end
 
 # Aliases
