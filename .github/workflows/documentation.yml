@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - master
+      - integration
     tags: '*'
   pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@latest
@@ -21,4 +25,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
+          DOCUMENTER_DEVBRANCH: ${{ github.ref_name == 'integration' && 'integration' || 'master' }}
         run: julia --project=docs/ docs/make.jl
