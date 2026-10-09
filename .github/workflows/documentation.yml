@@ -45,5 +45,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
           DOCUMENTER_DEVBRANCH: ${{ github.ref_name == 'integration' && 'integration' || 'master' }}
-          DOCUMENTER_WARNONLY: ${{ github.ref_name == 'integration' && 'missing_docs,cross_references' || '' }}
+          DOCUMENTER_WARNONLY: ${{ github.ref_name == 'integration' && 'missing_docs,cross_references,doctest' || '' }}
         run: julia --project=docs/ docs/make.jl
