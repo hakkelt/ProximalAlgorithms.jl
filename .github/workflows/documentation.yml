@@ -25,6 +25,7 @@ jobs:
         shell: julia --color=yes {0}
         run: |
           using Pkg
+          Pkg.Registry.add("General")
           forks = [
                 ("OperatorCore", "OperatorCore.jl", nothing),
                 ("ProximalOperators", "ProximalOperators.jl", nothing),
