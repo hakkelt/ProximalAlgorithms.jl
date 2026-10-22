@@ -6,6 +6,8 @@ using Zygote
 using DifferentiationInterface: AutoZygote
 using ProximalOperators: NormL1
 using ProximalAlgorithms
+using JLArrays: JLArrays, JLArray
+using RecursiveArrayTools: ArrayPartition
 
 @testset "Lipschitz safeguard ($T)" for T in [Float32, Float64, ComplexF64]
     R = real(T)
@@ -47,5 +49,23 @@ using ProximalAlgorithms
             @test s_on.gamma == s_off.gamma
             @test s_on.z == s_off.z
         end
+    end
+end
+
+# Partitioned iterates of device arrays (JLArrays refuse scalar indexing), as the components of a
+# decomposition solved on a GPU: the sums go part by part and agree with those of the whole arrays.
+@testset "Lipschitz safeguard on an ArrayPartition of device arrays ($T)" for T in [Float32, ComplexF64]
+    R = real(T)
+    rng = Xoshiro(11)
+    JLArrays.allowscalar(false)
+    whole = [randn(rng, T, 30) for _ in 1:4]
+    split2(v) = ArrayPartition(JLArray(v[1:12]), JLArray(v[13:end]))
+    S = promote_type(R, Float64)
+    @test collect(ProximalAlgorithms._safeguard_sums_in(S, split2.(whole)...)) ≈
+        collect(ProximalAlgorithms._safeguard_sums_in(S, whole...))
+    # A stepsize the quotient exceeds is shortened alike; one it does not is returned as is.
+    for gamma in (R(10), R(1.0e-3))
+        @test ProximalAlgorithms.lipschitz_safeguard(gamma, split2.(whole)...) ≈
+            ProximalAlgorithms.lipschitz_safeguard(gamma, whole...)
     end
 end
