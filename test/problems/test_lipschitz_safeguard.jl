@@ -53,8 +53,9 @@ using RecursiveArrayTools: ArrayPartition
 end
 
 # Partitioned iterates of device arrays (JLArrays refuse scalar indexing), as the components of a
-# decomposition solved on a GPU: the sums go part by part and agree with those of the whole arrays.
-@testset "Lipschitz safeguard on an ArrayPartition of device arrays ($T)" for T in [Float32, ComplexF64]
+# decomposition solved on a GPU: the sums go part by part (in the package extension, Julia 1.9 and
+# later) and agree with those of the whole arrays.
+isdefined(Base, :get_extension) && @testset "Lipschitz safeguard on an ArrayPartition of device arrays ($T)" for T in [Float32, ComplexF64]
     R = real(T)
     rng = Xoshiro(11)
     JLArrays.allowscalar(false)
