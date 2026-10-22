@@ -5,6 +5,8 @@ using Zygote
 using DifferentiationInterface: AutoZygote
 using ProximalOperators: NormL1, LeastSquares, SqrNormL2, ElasticNet, Translate
 using ProximalAlgorithms
+using JLArrays: JLArrays, JLArray
+using RecursiveArrayTools: ArrayPartition
 using ProximalAlgorithms:
     LBFGS,
     Broyden,
@@ -133,6 +135,14 @@ using ProximalAlgorithms:
         for (a, b, c) in ((w, z, x), (z, w, x), (x, z, w))
             expected = ProximalAlgorithms._pogm_restart(a, b, c)
             @test ProximalAlgorithms._pogm_restart(view(a, :), view(b, :), view(c, :)) == expected
+        end
+        # Partitioned iterates of device arrays (JLArrays refuse scalar indexing): summed part by part.
+        split2(v) = ArrayPartition(JLArray(v[1:(n ÷ 2)]), JLArray(v[(n ÷ 2 + 1):end]))
+        JLArrays.allowscalar(false)
+        for (a, b, c) in ((w, z, x), (z, w, x), (x, z, w))
+            @test ProximalAlgorithms._pogm_restart_sum(split2(a), split2(b), split2(c)) ≈
+                ProximalAlgorithms._pogm_restart_sum(a, b, c)
+            @test ProximalAlgorithms._pogm_restart(split2(a), split2(b), split2(c)) == ProximalAlgorithms._pogm_restart(a, b, c)
         end
     end
 
