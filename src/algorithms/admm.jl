@@ -46,7 +46,8 @@ See also: [`ADMM`](@ref).
 - `P_is_inverse=false`: whether `P` is the inverse of the preconditioner
 - `eps_abs=0`: absolute tolerance for convergence
 - `eps_rel=1`: relative tolerance for convergence
-- `cg_tol=1e-6`: CG tolerance
+- `cg_tol=1e-6`: relative tolerance of the inner CG solve of the x-update: CG stops once the residual of the
+  linear system has fallen to `cg_tol` times its value at the warm start (the previous `x`)
 - `cg_maxit=100`: maximum CG iterations
 - `y0=nothing`: initial dual variables
 - `z0=nothing`: initial auxiliary variables
@@ -381,6 +382,32 @@ function foreach_block(body, iter)
 	return nothing
 end
 
+"""
+	RelativeResidualStop(tol, floor)
+
+Stopping rule of ADMM's inner CG solve: stop once the residual norm has fallen to `tol` times the
+residual norm at the starting point, or to `floor` (round-off level of the right-hand side).
+
+The x-update is warm-started at the previous `x`, whose residual shrinks as ADMM converges. A fixed
+absolute threshold would accept that starting point unchanged as soon as its residual is below the
+threshold, and `x` would stop moving before ADMM has converged. A threshold relative to the starting
+residual makes every x-update reduce the residual by the same factor instead.
+"""
+mutable struct RelativeResidualStop{R<:Real}
+	const tol::R
+	const floor::R
+	threshold::R # set from the starting residual on the first call; negative until then
+end
+RelativeResidualStop(tol::R, floor) where {R<:Real} = RelativeResidualStop{R}(tol, R(floor), -one(R))
+
+function (stop::RelativeResidualStop)(::AbstractCGIteration, state::AbstractCGState)
+	residual = sqrt(state.r²)
+	if stop.threshold < 0
+		stop.threshold = max(stop.tol * residual, stop.floor)
+	end
+	return residual <= stop.threshold
+end
+
 function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 	# Get current rho values. `rho` aliases `iter.penalty_sequence.rho` and is mutated in place,
 	# so `state.cg_operator` (an `ADMMNormalOp` holding that same vector) always sees the current
@@ -416,7 +443,7 @@ function Base.iterate(iter::ADMMIteration, state=ADMMState(iter))
 		P=iter.P,
 		P_is_inverse=iter.P_is_inverse,
 		state=state.cg_state,
-		tol=iter.cg_tol,
+		stop=RelativeResidualStop(iter.cg_tol, eps(typeof(iter.cg_tol)) * norm(rhs)),
 		maxit=iter.cg_maxit,
 	)
 	x_old = state.tempˣ[1] # reusing the first element of tempˣ for the change in x
