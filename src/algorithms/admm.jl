@@ -50,7 +50,7 @@ See also: [`ADMM`](@ref).
   linear system has fallen to `cg_tol` times its value at the warm start (the previous `x`)
 - `cg_maxit=100`: maximum CG iterations
 - `y0=nothing`: initial dual variables
-- `z0=nothing`: initial auxiliary variables
+- `z0=nothing`: initial auxiliary variables; by default `Bᵢ * x0`, so a warm start `x0` is kept
 - `penalty_sequence=nothing`: penalty sequence for adaptive rho updating. The following options are available:
   - `FixedPenalty(rho)`: fixed penalty sequence with specified rho values
   - `ResidualBalancingPenalty(rho; mu=10.0, tau=2.0)`: adaptive penalty sequence based on residual balancing [2]
@@ -190,10 +190,10 @@ function prepare_initial_duals(::Val{N}, B, x0, y0, z0) where {N}
 		throw(ArgumentError("z0 must have the same length as g"))
 	end
 	if isnothing(z0)
-		z0 = ntuple(i -> allocate_output(B[i], x0), N)
-		for z_ in z0
-			fill!(z_, 0)
-		end
+		# zᵢ = Bᵢ x0, so the first x-update starts from a consistent split and keeps a warm start
+		# (with zᵢ = 0 it solves (AᴴA + ∑ᵢ ρᵢ BᵢᴴBᵢ) x = Aᴴb and jumps away from x0). For x0 = 0 this
+		# is the zero start as before.
+		z0 = ntuple(i -> mul!(allocate_output(B[i], x0), B[i], x0), N)
 	end
 	return y0, z0
 end
