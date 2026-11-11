@@ -293,6 +293,21 @@ using ProximalAlgorithms:
         @test x0 == x0_backup
     end
 
+    @testset "ADMM warm start" begin
+        # z starts at `B * x0`, not at zero: a warm start at the solution stays close to it after
+        # one iteration instead of being pulled towards the minimizer of ½‖Ax - b‖² + ρ/2 ‖x‖².
+        # (ρ comparable to ‖A‖²: with the default adaptive penalty ρ starts small and z barely matters.)
+        ps = ProximalAlgorithms.FixedPenalty([opnorm(A)^2])
+        iter = ProximalAlgorithms.ADMMIteration(x0 = copy(x_star), A = A, b = b, g = (g,), penalty_sequence = ps)
+        @test iter.z0[1] ≈ x_star
+        state, _ = iterate(iter)
+        cold = ProximalAlgorithms.ADMMIteration(
+            x0 = copy(x_star), A = A, b = b, g = (g,), z0 = (zeros(T, n),), penalty_sequence = ps,
+        )
+        state_cold, _ = iterate(cold)
+        @test norm(state.x - x_star) < norm(state_cold.x - x_star) / 2
+    end
+
     @testset "ADMM" begin
         x0 = zeros(T, n)
         x0_backup = copy(x0)
