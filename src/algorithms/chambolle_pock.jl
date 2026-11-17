@@ -205,9 +205,9 @@ See also: [`ChambollePockIteration`](@ref), [`VuCondat`](@ref), [`IterativeAlgor
 1. Chambolle, Pock, "A First-Order Primal-Dual Algorithm for Convex Problems with Applications to Imaging", Journal of Mathematical Imaging and Vision, vol. 40, no. 1, pp. 120-145 (2011).
 """
 ChambollePock(;
-    maxit = 10_000,
-    tol = 1.0e-5,
-    stop = (iter, state) -> default_stopping_criterion(tol, iter, state),
+    maxit = nothing,
+    tol = nothing,
+    stop = nothing,
     solution = default_solution,
     verbose = false,
     freq = 100,
@@ -216,8 +216,7 @@ ChambollePock(;
     kwargs...,
 ) = IterativeAlgorithm(
     ChambollePockIteration;
-    maxit,
-    stop,
+    termination_parameters(maxit, tol, stop; default_maxit = 10_000, default_tol = 1.0e-5)...,
     solution,
     verbose,
     freq,
