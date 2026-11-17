@@ -374,16 +374,16 @@ See also: [`NonlinearCGIteration`](@ref), [`LimitedMemoryBFGS`](@ref), [`Iterati
 - `kwargs...`: additional keyword arguments to pass on to the `NonlinearCGIteration` constructor upon call
 """
 NonlinearCG(;
-    maxit = 1_000,
-    tol = 1e-8,
-    stop = (iter, state) -> default_stopping_criterion(tol, iter, state),
+    maxit = nothing,
+    tol = nothing,
+    stop = nothing,
     solution = default_solution,
     verbose = false,
     freq = 100,
     summary = default_iteration_summary,
     display = default_display,
     kwargs...,
-) = IterativeAlgorithm(NonlinearCGIteration; maxit, stop, solution, verbose, freq, summary, display, kwargs...)
+) = IterativeAlgorithm(NonlinearCGIteration; termination_parameters(maxit, tol, stop; default_maxit = 1_000, default_tol = 1e-8)..., solution, verbose, freq, summary, display, kwargs...)
 
 """
     LimitedMemoryBFGS(; <keyword-arguments>)
@@ -409,13 +409,13 @@ See also: [`LimitedMemoryBFGSIteration`](@ref), [`NonlinearCG`](@ref), [`Iterati
 - `kwargs...`: additional keyword arguments to pass on to the `LimitedMemoryBFGSIteration` constructor upon call
 """
 LimitedMemoryBFGS(;
-    maxit = 1_000,
-    tol = 1e-8,
-    stop = (iter, state) -> default_stopping_criterion(tol, iter, state),
+    maxit = nothing,
+    tol = nothing,
+    stop = nothing,
     solution = default_solution,
     verbose = false,
     freq = 100,
     summary = default_iteration_summary,
     display = default_display,
     kwargs...,
-) = IterativeAlgorithm(LimitedMemoryBFGSIteration; maxit, stop, solution, verbose, freq, summary, display, kwargs...)
+) = IterativeAlgorithm(LimitedMemoryBFGSIteration; termination_parameters(maxit, tol, stop; default_maxit = 1_000, default_tol = 1e-8)..., solution, verbose, freq, summary, display, kwargs...)
