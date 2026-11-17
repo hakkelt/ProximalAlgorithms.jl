@@ -113,3 +113,12 @@ end
         @test explicit_parameters(override_parameters(Alg(tol = 1.0e-3); verbose = true)) == (:tol,)
     end
 end
+
+@testset "explicit_parameters of ChambollePock" begin
+    using ProximalAlgorithms: explicit_parameters
+    for Alg in (ProximalAlgorithms.ChambollePock,)
+        @test explicit_parameters(Alg()) == ()
+        @test explicit_parameters(Alg(maxit = 7)) == (:maxit,)
+        @test explicit_parameters(Alg(tol = 1.0e-3)) == (:tol,)
+    end
+end
