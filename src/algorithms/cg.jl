@@ -286,10 +286,9 @@ function Base.iterate(iter::AbstractPCGIteration)
 	else
 		@. state.r = iter.b - state.r
 	end
-	# The λ term, exactly as in the unpreconditioned `iterate` above: the preconditioned pair used
-	# to omit it, so a `CG(; P, λ)` / `CGNR(; P, λ)` solve silently returned the *unregularized*
-	# minimizer -- a wrong answer rather than an error.
-	if iter.λ > 0
+	# The λ term, exactly as in the unpreconditioned `iterate` above; without it a
+	# `CG(; P, λ)` / `CGNR(; P, λ)` solve would return the unregularized minimizer.
+	if _has_λ(iter.λ)
 		@. state.r -= iter.λ * state.x
 	end
 
@@ -340,7 +339,7 @@ end
 
 function Base.iterate(iter::AbstractPCGIteration, state::PCGState)
 	mul!(state.Ap, iter.A, state.p) # Ap = A*p
-	if iter.λ > 0
+	if _has_λ(iter.λ)
 		@. state.Ap += iter.λ * state.p # add regularization term λp
 	end
 

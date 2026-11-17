@@ -86,9 +86,8 @@ using Random
     end
 
     @testset "Preconditioned ridge regression" begin
-        # The preconditioned iteration used to drop the λ term from both the residual and the
-        # matrix-vector product, so `CG(; P, λ)` silently solved the *unregularized* problem --
-        # a wrong answer rather than an error. Both must land on the same solution, `(A + λI) \ b`.
+        # The preconditioned iteration includes the λ term in both the residual and the
+        # matrix-vector product: with and without `P` the solve lands on `(A + λI) \ b`.
         n = 60
         A = rand(n, n)
         A = A'A + I
@@ -135,5 +134,12 @@ using Random
         x, _ = ProximalAlgorithms.CGNR(x0 = zeros(ComplexF64, n), A = B, b = c, λ = λ, maxit = 500)()
         @test x ≈ (B'B + Diagonal(λ)) \ (B'c) rtol = 1.0e-6
         @test ProximalAlgorithms.CG(x0 = zeros(n), A = A, b = b, λ = zeros(n), maxit = 500)()[1] ≈ A \ b rtol = 1.0e-6
+        # The same systems with a Jacobi preconditioner.
+        P = Diagonal(diag(A) .+ λ)
+        x, _ = ProximalAlgorithms.CG(x0 = zeros(n), A = A, b = b, λ = λ, P = P, maxit = 500)()
+        @test x ≈ (A + Diagonal(λ)) \ b rtol = 1.0e-6
+        P = Diagonal(real.(diag(B'B)) .+ λ)
+        x, _ = ProximalAlgorithms.CGNR(x0 = zeros(ComplexF64, n), A = B, b = c, λ = λ, P = P, maxit = 500)()
+        @test x ≈ (B'B + Diagonal(λ)) \ (B'c) rtol = 1.0e-6
     end
 end
