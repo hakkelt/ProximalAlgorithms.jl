@@ -227,7 +227,12 @@ end
 function PCGNRIteration(;
 	x0::Tx, A::TA, b::Tb, P::TP, P_is_inverse=false, λ::R=0, state::PCGState=PCGState(x0, x0)
 ) where {Tx,TA,Tb,TP,R}
-	return PCGNRIteration{Tx,TA,Tb,TP,real(eltype(x0))}(x0, A' * A, A' * b, P, P_is_inverse, λ, state)
+	# `typeof(AᴴA)` and `Tx`, as in `CGNRIteration` above -- not `TA`/`Tb`, which are the types of
+	# the *un*-composed `A` and of the measurement `b`. The stored fields are `A'A` and `A'b`, so
+	# naming the parameters after the arguments made every operator whose normal form has a
+	# different type (any `Compose`, i.e. every MRI encoding operator) fail to `convert`.
+	AᴴA = A' * A
+	return PCGNRIteration{Tx,typeof(AᴴA),Tx,TP,real(eltype(x0))}(x0, AᴴA, A' * b, P, P_is_inverse, λ, state)
 end
 
 # `λ` is a scalar or an array of the size of `x` (a per-element weight); zero means no regularization.
@@ -281,6 +286,11 @@ function Base.iterate(iter::AbstractPCGIteration)
 	else
 		@. state.r = iter.b - state.r
 	end
+	# The λ term, exactly as in the unpreconditioned `iterate` above; without it a
+	# `CG(; P, λ)` / `CGNR(; P, λ)` solve would return the unregularized minimizer.
+	if _has_λ(iter.λ)
+		@. state.r -= iter.λ * state.x
+	end
 
 	# z = P\r or z = P*r
 	if iter.P_is_inverse
@@ -329,6 +339,9 @@ end
 
 function Base.iterate(iter::AbstractPCGIteration, state::PCGState)
 	mul!(state.Ap, iter.A, state.p) # Ap = A*p
+	if _has_λ(iter.λ)
+		@. state.Ap += iter.λ * state.p # add regularization term λp
+	end
 
 	pAp = real(dot(vec(state.p), vec(state.Ap)))
 	state.α = state.rz / pAp # α = (r'z)/(p'Ap)
