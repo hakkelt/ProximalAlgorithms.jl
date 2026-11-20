@@ -9,4 +9,12 @@ using RecursiveArrayTools: ArrayPartition
 ProximalAlgorithms._pogm_restart_sum(w::ArrayPartition, z::ArrayPartition, x::ArrayPartition) =
     sum(map(ProximalAlgorithms._pogm_restart_sum, w.x, z.x, x.x))
 
+# The six squared norms of the Lipschitz safeguard, added over the parts.
+function ProximalAlgorithms._safeguard_sums_in(
+        ::Type{S}, x::ArrayPartition, x_prev::ArrayPartition, grad::ArrayPartition, grad_prev::ArrayPartition,
+    ) where {S}
+    parts = map((u...) -> ProximalAlgorithms._safeguard_sums_in(S, u...), x.x, x_prev.x, grad.x, grad_prev.x)
+    return reduce((a, b) -> map(+, a, b), parts)
+end
+
 end # module
