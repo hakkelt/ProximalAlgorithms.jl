@@ -117,6 +117,10 @@ end
 @testset "explicit_parameters of ChambollePock" begin
     using ProximalAlgorithms: explicit_parameters
     for Alg in (ProximalAlgorithms.ChambollePock,)
+
+@testset "explicit_parameters of NonlinearCG, LimitedMemoryBFGS" begin
+    using ProximalAlgorithms: explicit_parameters
+    for Alg in (ProximalAlgorithms.NonlinearCG, ProximalAlgorithms.LimitedMemoryBFGS,)
         @test explicit_parameters(Alg()) == ()
         @test explicit_parameters(Alg(maxit = 7)) == (:maxit,)
         @test explicit_parameters(Alg(tol = 1.0e-3)) == (:tol,)
